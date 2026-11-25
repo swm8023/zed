@@ -52,7 +52,6 @@ pub fn init_visual_test(cx: &mut VisualTestAppContext) -> Arc<AppState> {
 
         gpui_tokio::init(cx);
         theme_settings::init(theme::LoadThemes::JustBase, cx);
-        audio::init(cx);
         workspace::init(app_state.clone(), cx);
         release_channel::init(semver::Version::new(0, 0, 0), cx);
         command_palette::init(cx);
@@ -87,7 +86,7 @@ pub async fn open_test_workspace(
         project::Project::local(
             app_state.client.clone(),
             app_state.node_runtime.clone(),
-            app_state.user_store.clone(),
+
             app_state.languages.clone(),
             app_state.fs.clone(),
             None,

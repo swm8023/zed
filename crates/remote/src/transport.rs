@@ -20,6 +20,25 @@ pub mod mock;
 pub mod ssh;
 pub mod wsl;
 
+fn check_deployed_server(
+    path: &str,
+    release_channel: release_channel::ReleaseChannel,
+    version: semver::Version,
+    deployed_version: Result<String>,
+) -> Result<()> {
+    let version = semver::Version::new(version.major, version.minor, version.patch);
+    let expected = format!("{version}+{}", release_channel.dev_name());
+    let actual = deployed_version.with_context(|| {
+        format!("Deploy the remote server for {expected} on the host at {path}")
+    })?;
+    let actual = actual.trim().lines().next_back().unwrap_or_default().trim();
+    anyhow::ensure!(
+        actual == expected,
+        "Remote server at {path} reports {actual:?}. Deploy the remote server for {expected} at this path."
+    );
+    Ok(())
+}
+
 /// Parses the output of `uname -sm` to determine the remote platform.
 /// Takes the last line to skip possible shell initialization output.
 fn parse_platform(output: &str) -> Result<RemotePlatform> {
@@ -554,6 +573,21 @@ async fn which(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_deployed_server_must_match_the_editor_package() {
+        let version = semver::Version::new(1, 29, 3);
+        let channel = release_channel::ReleaseChannel::Dev;
+        let path = ".zed_server/zed-remote-server-dev-build";
+
+        assert!(check_deployed_server(path, channel, version.clone(), Ok("1.29.3+dev\r\n".into())).is_ok());
+        let error = check_deployed_server(path, channel, version.clone(), Ok("1.29.2+dev".into()))
+            .unwrap_err().to_string();
+        assert!(error.contains(path) && error.contains("1.29.3+dev"));
+        let error = check_deployed_server(path, channel, version, Err(anyhow::anyhow!("missing")))
+            .unwrap_err().to_string();
+        assert!(error.contains(path) && error.contains("1.29.3+dev"));
+    }
 
     #[test]
     fn test_parse_platform() {

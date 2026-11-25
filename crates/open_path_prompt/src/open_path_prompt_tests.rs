@@ -6,7 +6,7 @@ use std::{
 use fuzzy::{StringMatch, StringMatchCandidate};
 use gpui::{AppContext, Entity, KeyBinding, PathPromptOptions, TestAppContext, VisualTestContext};
 use picker::{Picker, PickerDelegate};
-use project::{DirectoryLister, DisableAiSettings, Project};
+use project::{DirectoryLister, Project};
 use serde_json::json;
 use settings::{Settings, SettingsStore};
 use util::path;
@@ -574,20 +574,12 @@ async fn test_open_file_selections_preserve_workspace_and_dirty_items(cx: &mut T
         });
     });
 
-    for (root, disable_ai) in [
-        (path!("/root/first.txt"), false),
-        (path!("/root/first.txt"), true),
-        (path!("/root"), false),
-        (path!("/root"), true),
-    ] {
-        cx.update(|cx| DisableAiSettings::override_global(DisableAiSettings { disable_ai }, cx));
+    for root in [path!("/root/first.txt"), path!("/root")] {
         let project = Project::test(app_state.fs.clone(), [root.as_ref()], cx).await;
         let (multi_workspace, cx) =
             cx.add_window_view(|window, cx| MultiWorkspace::test_new(project.clone(), window, cx));
-        let workspace = multi_workspace.read_with(cx, |multi_workspace, cx| {
-            assert_eq!(multi_workspace.multi_workspace_enabled(cx), !disable_ai);
-            multi_workspace.workspace().clone()
-        });
+        let workspace =
+            multi_workspace.read_with(cx, |multi_workspace, _| multi_workspace.workspace().clone());
         workspace
             .update_in(cx, |workspace, window, cx| {
                 workspace.open_abs_path(
@@ -659,18 +651,13 @@ async fn test_open_project_stays_in_window(cx: &mut TestAppContext) {
         });
     });
 
-    for (mut paths, disable_ai) in [
-        (vec![PathBuf::from(path!("/other"))], false),
-        (
-            vec![
-                PathBuf::from(path!("/other")),
-                PathBuf::from(path!("/root/file.txt")),
-            ],
-            false,
-        ),
-        (vec![PathBuf::from(path!("/other"))], true),
+    for mut paths in [
+        vec![PathBuf::from(path!("/other"))],
+        vec![
+            PathBuf::from(path!("/other")),
+            PathBuf::from(path!("/root/file.txt")),
+        ],
     ] {
-        cx.update(|cx| DisableAiSettings::override_global(DisableAiSettings { disable_ai }, cx));
         let project = Project::test(app_state.fs.clone(), [path!("/root").as_ref()], cx).await;
         let (multi_workspace, cx) =
             cx.add_window_view(|window, cx| MultiWorkspace::test_new(project, window, cx));
@@ -696,20 +683,6 @@ async fn test_open_project_stays_in_window(cx: &mut TestAppContext) {
         multi_workspace.read_with(cx, |multi_workspace, _| {
             assert_eq!(multi_workspace.workspace(), &opened_workspace);
         });
-        if disable_ai {
-            prompt_and_select_paths(
-                &opened_workspace,
-                vec![
-                    PathBuf::from(path!("/other")),
-                    PathBuf::from(path!("/root/file.txt")),
-                ],
-                false,
-                cx,
-            );
-            multi_workspace.read_with(cx, |multi_workspace, _| {
-                assert_eq!(multi_workspace.workspace(), &opened_workspace);
-            });
-        }
     }
 }
 

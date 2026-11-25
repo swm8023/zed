@@ -16,16 +16,16 @@ Remote development requires two computers, your local machine that runs the Zed 
 
 ![Architectural overview of Zed Remote Development](https://zed.dev/img/remote-development/diagram.png)
 
-On your local machine, Zed runs its UI, talks to language models, uses Tree-sitter to parse and syntax-highlight code, and stores unsaved changes and recent projects. The source code, language servers, tasks, and the terminal all run on the remote server. [AI features](./ai/overview.md) work in remote sessions, including the Agent Panel and Inline Assistant.
+On your local machine, Zed runs its UI, uses Tree-sitter to parse and syntax-highlight code, and stores unsaved changes and recent projects. The source code, language servers, tasks, and the terminal all run on the remote server.
 
 > **Note:** The original version of remote development sent traffic via Zed's servers. As of Zed v0.157 you can no longer use that mode.
 
 ## Setup
 
-1. Download and install the latest [Zed](https://zed.dev/releases). You need at least Zed v0.159.
+1. Install your local Zed build and deploy its matching remote server on the host.
 1. Use {#kb projects::OpenRemote} to open the "Remote Projects" dialog.
 1. Click "Connect New Server" and enter the command you use to SSH into the server. See [Supported SSH options](#supported-ssh-options) for options you can pass.
-1. Your local machine will attempt to connect to the remote server using the `ssh` binary on your path. Assuming the connection is successful, Zed will download the server on the remote host and start it.
+1. Your local machine will attempt to connect to the remote server using the `ssh` binary on your path. After connecting, Zed checks the deployed server version and starts it.
 1. Once the Zed server is running, you will be prompted to choose a path to open on the remote server.
    > **Note:** Zed does not currently handle opening very large directories (for example, `/` or `~` that may have >100,000 files) very well. We are working on improving this, but suggest in the meantime opening only specific projects, or subfolders of very large mono-repos.
 
@@ -72,7 +72,7 @@ Zed shells out to the `ssh` on your path, and so it will inherit any configurati
 }
 ```
 
-There are two additional Zed-specific options per connection, `upload_binary_over_ssh` and `nickname`:
+Use `nickname` to distinguish hosts in the Zed UI.
 
 ```json [settings]
 {
@@ -80,10 +80,6 @@ There are two additional Zed-specific options per connection, `upload_binary_ove
     {
       "host": "192.168.1.10",
       "projects": [{ "paths": ["~/code/zed/zed"] }],
-      // by default Zed will download the server binary from the internet on the remote.
-      // When this is true, it'll be downloaded to your laptop and uploaded over SSH.
-      // This is useful when your remote server has restricted internet access.
-      "upload_binary_over_ssh": true,
       // Shown in the Zed UI to help distinguish multiple hosts.
       "nickname": "lil-linux"
     }
@@ -201,7 +197,7 @@ In addition any extensions you have installed locally will be propagated to the 
 
 The remote server will not use your local machine's proxy configuration because they may be under different network policies. If your remote server requires a proxy to access the internet, you must configure it on the remote server itself.
 
-In most cases, your remote server will already have proxy environment variables configured. Zed will automatically use them when downloading language servers, communicating with LLM models, etc.
+In most cases, your remote server will already have proxy environment variables configured. Zed will automatically use them when downloading language servers.
 
 If needed, you can set these environment variables in the server's shell configuration (e.g., `~/.bashrc`):
 
@@ -227,27 +223,15 @@ Once you provide the SSH options, Zed shells out to `ssh` on your local machine 
 
 Any prompts that SSH needs will be shown in the UI, so you can verify host keys, type key passwords, etc.
 
-Once the master connection is established, Zed will check to see if the remote server binary is present in `~/.zed_server` on the remote, and that its version matches the current version of Zed that you're using.
+Build `remote-server` from the same checkout and release channel as the editor, on the remote operating system and architecture.
 
-If it is not there or the version mismatches, Zed will try to download the latest version. By default, it will download from `https://zed.dev` directly, but if you set: `{"upload_binary_over_ssh":true}` in your settings for that server, it will download the binary to your local machine and then upload it to the remote server.
-
-If you'd like to maintain the server binary yourself you can. You can either download our prebuilt versions from [GitHub](https://github.com/zed-industries/zed/releases), or [build your own](https://zed.dev/docs/development):
-
-```bash
-cargo build --release --package remote_server
-llvm-objcopy --strip-debug target/release/remote-server
+```sh
+cargo build --release --locked --package remote_server --bin remote-server
 ```
 
-Stripping debug symbols matches the packaging step in [`script/bundle-linux`](https://github.com/zed-industries/zed/blob/main/script/bundle-linux) and keeps the binary closer to the size of Zed's prebuilt downloads. Prefer `llvm-objcopy` because GNU `objcopy` may not understand newer LLVM-emitted CREL sections.
+Copy the executable to the path shown by the connection prompt under the remote user's `.zed_server` directory. A dev build uses `~/.zed_server/zed-remote-server-dev-build`. Append `.exe` for a Windows host. On Unix, make the executable runnable with `chmod +x`.
 
-The official Linux release builds a musl/static remote server. If you need that, follow the current target and flags in [`script/bundle-linux`](https://github.com/zed-industries/zed/blob/main/script/bundle-linux); for x86-64 Linux, that looks like:
-
-```bash
-RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package remote_server --target x86_64-unknown-linux-musl
-llvm-objcopy --strip-debug target/x86_64-unknown-linux-musl/release/remote-server
-```
-
-If you do this, you must upload it to `~/.zed_server/zed-remote-server-{RELEASE_CHANNEL}-{VERSION}` on the server, for example `~/.zed_server/zed-remote-server-stable-0.217.3+stable.105.80433cb239e868271457ac376673a5f75bc4adb1`. The version must exactly match the version of Zed itself you are using.
+Run `remote-server version --package` to check the version and channel. Zed refuses the connection when the executable is missing or its version and channel differ from the editor's. WSL and dev containers also use an executable deployed in their own environment.
 
 ## Maintaining the SSH connection
 
@@ -290,6 +274,5 @@ Note that we deliberately disallow some options (for example `-t` or `-T`) that 
   remote connection is active.
 - [Configuring Zed](./configuring-zed.md): Manage shared and project settings,
   including `.zed/settings.json`.
-- [Agent Panel](./ai/agent-panel.md): Use AI workflows in remote projects.
 - [Remote Development on zed.dev](https://zed.dev/remote-development): Product
   overview and release updates.

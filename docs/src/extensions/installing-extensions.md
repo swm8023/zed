@@ -1,25 +1,23 @@
 ---
 title: Installing Extensions
-description: "Browse, install, and manage extensions from the Zed Extension Gallery."
+description: Browse official extensions and manage local extensions.
 ---
 
 # Installing Extensions {#installing-extensions}
 
-Extensions add functionality to Zed, including languages, themes, and AI tools. Browse and install them from the Extension Gallery.
+Open {#action zed::Extensions} and select **Browse Official Extensions** to
+search the Zed catalog. Select **Install** on the extension you want to download.
 
-Open the Extension Gallery with {#kb zed::Extensions}, or select "Zed > Extensions" from the menu bar.
+Use **Installed** to search or remove local extensions, including while offline.
+Use {#action zed::InstallDevExtension} to load an extension from a local source
+directory. To install a prebuilt extension, extract its files into a directory
+named for its extension ID under `extensions/installed`. Run
+{#action zed::ReloadExtensions} to pick up changes.
 
 ## Installation Location
 
-- On macOS, extensions are installed in `~/Library/Application Support/Zed/extensions`.
-- On Linux, they are installed in either `$XDG_DATA_HOME/zed/extensions` or `~/.local/share/zed/extensions`.
-- On Windows, the directory is `%LOCALAPPDATA%\Zed\extensions`.
+- On macOS, extensions are stored in `~/Library/Application Support/Zed/extensions`.
+- On Linux, they are stored in `$XDG_DATA_HOME/zed/extensions` or `~/.local/share/zed/extensions`.
+- On Windows, they are stored in `%LOCALAPPDATA%\Zed\extensions`.
 
-This directory contains two subdirectories:
-
-- `installed`, which contains the source code for each extension.
-- `work` which contains files created by the extension itself, such as downloaded language servers.
-
-## Auto-installing
-
-To automate extension installation/uninstallation see the docs for [auto_install_extensions](../reference/all-settings.md#auto-install-extensions).
+The `installed` subdirectory contains extension files. The `work` subdirectory contains files created by extensions, such as downloaded language servers.

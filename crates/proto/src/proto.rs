@@ -115,10 +115,6 @@ messages!(
     (GetDeclarationResponse, Background),
     (GetDefinition, Background),
     (GetDefinitionResponse, Background),
-    (GetEditPredictionDefinition, Background),
-    (GetEditPredictionDefinitionResponse, Background),
-    (GetEditPredictionTypeDefinition, Background),
-    (GetEditPredictionTypeDefinitionResponse, Background),
     (GetDocumentHighlights, Background),
     (GetDocumentHighlightsResponse, Background),
     (GetDocumentSymbols, Background),
@@ -127,8 +123,6 @@ messages!(
     (GetHoverResponse, Background),
     (GetNotifications, Foreground),
     (GetNotificationsResponse, Foreground),
-    (GetCrashFiles, Background),
-    (GetCrashFilesResponse, Background),
     (GetFilePermalink, Foreground),
     (GetFilePermalinkResponse, Foreground),
     (GetPathMetadata, Background),
@@ -306,7 +300,6 @@ messages!(
     (SynchronizeBuffersResponse, Foreground),
     (TaskContext, Background),
     (TaskContextForLocation, Background),
-    (TelemetryEvent, Background),
     (Test, Foreground),
     (Toast, Background),
     (Unfollow, Foreground),
@@ -394,14 +387,6 @@ messages!(
     (ToggleLspLogs, Foreground),
     (GetDirectoryEnvironment, Background),
     (DirectoryEnvironment, Background),
-    (GetAgentServerCommand, Background),
-    (AgentServerCommand, Background),
-    (GetContextServerCommand, Background),
-    (ContextServerCommand, Background),
-    (ExternalAgentsUpdated, Background),
-    (ExternalExtensionAgentsUpdated, Background),
-    (ExternalAgentLoadingStatusUpdated, Background),
-    (NewExternalAgentVersionAvailable, Background),
     (RemoteStarted, Background),
     (GitGetWorktrees, Background),
     (GitGetHeadSha, Background),
@@ -462,14 +447,6 @@ request_messages!(
     (GetCodeActions, GetCodeActionsResponse),
     (GetCompletions, GetCompletionsResponse),
     (GetDefinition, GetDefinitionResponse),
-    (
-        GetEditPredictionDefinition,
-        GetEditPredictionDefinitionResponse
-    ),
-    (
-        GetEditPredictionTypeDefinition,
-        GetEditPredictionTypeDefinitionResponse
-    ),
     (GetDeclaration, GetDeclarationResponse),
     (GetImplementation, GetImplementationResponse),
     (GetDocumentHighlights, GetDocumentHighlightsResponse),
@@ -599,7 +576,6 @@ request_messages!(
     (ActiveToolchain, ActiveToolchainResponse),
     (ResolveToolchain, ResolveToolchainResponse),
     (GetPathMetadata, GetPathMetadataResponse),
-    (GetCrashFiles, GetCrashFilesResponse),
     (CancelLanguageServerWork, Ack),
     (SyncExtensions, SyncExtensionsResponse),
     (InstallExtension, Ack),
@@ -643,8 +619,6 @@ request_messages!(
     (GetDirectoryEnvironment, DirectoryEnvironment),
     (GetTerminalShell, GetTerminalShellResponse),
     (GetProcesses, GetProcessesResponse),
-    (GetAgentServerCommand, AgentServerCommand),
-    (GetContextServerCommand, ContextServerCommand),
     (RemoteStarted, Ack),
     (GitGetWorktrees, GitWorktreesResponse),
     (GitGetHeadSha, GitGetHeadShaResponse),
@@ -677,16 +651,6 @@ lsp_messages!(
     (GetCodeLens, GetCodeLensResponse, true),
     (GetDocumentDiagnostics, GetDocumentDiagnosticsResponse, true),
     (GetDefinition, GetDefinitionResponse, true),
-    (
-        GetEditPredictionDefinition,
-        GetEditPredictionDefinitionResponse,
-        true
-    ),
-    (
-        GetEditPredictionTypeDefinition,
-        GetEditPredictionTypeDefinitionResponse,
-        true
-    ),
     (GetDeclaration, GetDeclarationResponse, true),
     (GetTypeDefinition, GetTypeDefinitionResponse, true),
     (GetImplementation, GetImplementationResponse, true),
@@ -732,8 +696,6 @@ entity_messages!(
     GetCodeLens,
     GetCompletions,
     GetDefinition,
-    GetEditPredictionDefinition,
-    GetEditPredictionTypeDefinition,
     GetDeclaration,
     GetImplementation,
     GetDocumentHighlights,
@@ -814,7 +776,6 @@ entity_messages!(
     LspExtRunFlycheck,
     LspExtClearFlycheck,
     LanguageServerLog,
-    TelemetryEvent,
     Toast,
     HideToast,
     OpenServerSettings,
@@ -869,12 +830,6 @@ entity_messages!(
     BlameBufferAtRevision,
     LoadCommitTemplate,
     GitClone,
-    GetAgentServerCommand,
-    GetContextServerCommand,
-    ExternalAgentsUpdated,
-    ExternalExtensionAgentsUpdated,
-    ExternalAgentLoadingStatusUpdated,
-    NewExternalAgentVersionAvailable,
     GitGetWorktrees,
     GitGetHeadSha,
     GitEditRef,
@@ -1081,12 +1036,6 @@ impl LspQuery {
                 ("GetDocumentDiagnostics", false)
             }
             Some(lsp_query::Request::GetDefinition(_)) => ("GetDefinition", false),
-            Some(lsp_query::Request::GetEditPredictionDefinition(_)) => {
-                ("GetEditPredictionDefinition", false)
-            }
-            Some(lsp_query::Request::GetEditPredictionTypeDefinition(_)) => {
-                ("GetEditPredictionTypeDefinition", false)
-            }
             Some(lsp_query::Request::GetDeclaration(_)) => ("GetDeclaration", false),
             Some(lsp_query::Request::GetTypeDefinition(_)) => ("GetTypeDefinition", false),
             Some(lsp_query::Request::GetImplementation(_)) => ("GetImplementation", false),

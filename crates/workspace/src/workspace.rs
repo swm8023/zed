@@ -31,20 +31,18 @@ mod workspace_settings;
 
 pub use dock::Panel;
 pub use multi_workspace::{
-    CloseWorkspaceSidebar, DraggedSidebar, FocusWorkspaceSidebar, MoveProjectDown,
-    MoveProjectToNewWindow, MoveProjectUp, MultiWorkspace, MultiWorkspaceEvent, NewThread,
-    NextProject, NextThread, PreviousProject, PreviousThread, ProjectGroup, ProjectGroupKey,
+    DraggedSidebar, MoveProjectDown, MoveProjectToNewWindow, MoveProjectUp, MultiWorkspace,
+    MultiWorkspaceEvent, NextProject, PreviousProject, ProjectGroup, ProjectGroupKey,
     RemovalIntent, SerializedProjectGroupState, Sidebar, SidebarEvent, SidebarHandle,
-    SidebarRenderState, SidebarSide, ToggleWorkspaceSidebar, sidebar_side_context_menu,
+    SidebarRenderState, SidebarSide,
 };
 pub use path_list::{PathList, SerializedPathList};
 pub use remote::RemoteConnectionIdentity;
 pub use toast_layer::{ToastAction, ToastLayer, ToastView};
 
-use agent_settings::AgentSettings;
 use anyhow::{Context as _, Result, anyhow};
 use client::{
-    ChannelId, Client, ErrorExt, ParticipantIndex, Status, TypedEnvelope, User, UserStore,
+    ChannelId, Client, ErrorExt, ParticipantIndex, TypedEnvelope, User,
     proto::{self, ErrorCode, PanelId, PeerId},
 };
 use collections::{HashMap, HashSet, TypeIdHashMap, hash_map};
@@ -74,7 +72,7 @@ pub use item::{
     ProjectItem, SerializableItem, SerializableItemHandle, WeakItemHandle,
 };
 use itertools::Itertools;
-use language::{Buffer, LanguageRegistry, Rope, language_settings::all_language_settings};
+use language::{Buffer, LanguageRegistry, Rope};
 pub use modal_layer::*;
 use node_runtime::NodeRuntime;
 use notifications::{
@@ -115,7 +113,6 @@ use serde::Deserialize;
 use session::AppSession;
 use settings::{
     CenteredPaddingSettings, DefaultOpenBehavior, Settings, SettingsLocation, SettingsStore,
-    update_settings_file,
 };
 
 use sqlez::{
@@ -423,8 +420,6 @@ actions!(
         CloseProject,
         /// Opens the feedback dialog.
         Feedback,
-        /// Follows the next collaborator in the session.
-        FollowNextCollaborator,
         /// Moves the focused panel to the next position.
         MoveFocusedPanelToNextPosition,
         /// Creates a new file.
@@ -469,8 +464,6 @@ actions!(
         ToggleBottomDock,
         /// Toggles centered layout mode.
         ToggleCenteredLayout,
-        /// Toggles edit prediction feature globally for all files.
-        ToggleEditPrediction,
         /// Toggles the left dock.
         ToggleLeftDock,
         /// Toggles the right dock.
@@ -492,10 +485,6 @@ actions!(
         /// Clears all trusted worktrees, placing them in restricted mode on next open.
         /// Requires restart to take effect on already opened projects.
         ClearTrustedWorktrees,
-        /// Stops following a collaborator.
-        Unfollow,
-        /// Restores the banner.
-        RestoreBanner,
         /// Toggles expansion of the selected item.
         ToggleExpandItem,
     ]
@@ -1392,7 +1381,7 @@ pub fn register_serializable_item<I: SerializableItem>(cx: &mut App) {
 pub struct AppState {
     pub languages: Arc<LanguageRegistry>,
     pub client: Arc<Client>,
-    pub user_store: Entity<UserStore>,
+
     pub workspace_store: Entity<WorkspaceStore>,
     pub fs: Arc<dyn fs::Fs>,
     pub build_window_options: fn(Option<Uuid>, &mut App) -> WindowOptions,
@@ -1483,17 +1472,16 @@ impl AppState {
         let http_client = http_client::FakeHttpClient::with_404_response();
         let client = Client::new(clock, http_client, cx);
         let session = cx.new(|cx| AppSession::new(Session::test(), cx));
-        let user_store = cx.new(|cx| UserStore::new(client.clone(), cx));
+
         let workspace_store = cx.new(|cx| WorkspaceStore::new(client.clone(), cx));
 
         theme_settings::init(theme::LoadThemes::JustBase, cx);
-        client::init(&client, cx);
 
         Arc::new(Self {
             client,
             fs,
             languages,
-            user_store,
+
             workspace_store,
             node_runtime: NodeRuntime::unavailable(),
             build_window_options: |_, _| Default::default(),
@@ -1693,7 +1681,6 @@ pub struct Workspace {
     dispatching_keystrokes: Rc<RefCell<DispatchingKeystrokes>>,
     _subscriptions: Vec<Subscription>,
     _apply_leader_updates: Task<Result<()>>,
-    _observe_current_user: Task<Result<()>>,
     _schedule_serialize_workspace: Option<Task<()>>,
     _serialize_workspace_task: Option<Task<()>>,
     _schedule_serialize_ssh_paths: Option<Task<()>>,
@@ -1928,10 +1915,6 @@ impl Workspace {
                     );
                 }
 
-                project::Event::AgentLocationChanged => {
-                    this.handle_agent_location_changed(window, cx)
-                }
-
                 _ => {}
             }
             cx.notify()
@@ -2002,20 +1985,6 @@ impl Workspace {
             store
                 .workspaces
                 .insert((any_window_handle, weak_handle.clone()));
-        });
-
-        let mut current_user = app_state.user_store.read(cx).watch_current_user();
-        let mut connection_status = app_state.client.status();
-        let _observe_current_user = cx.spawn_in(window, async move |this, cx| {
-            current_user.next().await;
-            connection_status.next().await;
-            let mut stream =
-                Stream::map(current_user, drop).merge(Stream::map(connection_status, drop));
-
-            while stream.recv().await.is_some() {
-                this.update(cx, |_, cx| cx.notify())?;
-            }
-            anyhow::Ok(())
         });
 
         // All leader updates are enqueued and then processed in a single task, so
@@ -2197,7 +2166,6 @@ impl Workspace {
             active_call,
             database_id: workspace_id,
             app_state,
-            _observe_current_user,
             _apply_leader_updates,
             _schedule_serialize_workspace: None,
             _serialize_workspace_task: None,
@@ -2250,7 +2218,7 @@ impl Workspace {
         let project_handle = Project::local(
             app_state.client.clone(),
             app_state.node_runtime.clone(),
-            app_state.user_store.clone(),
+
             app_state.languages.clone(),
             app_state.fs.clone(),
             env,
@@ -2719,13 +2687,6 @@ impl Workspace {
         }
     }
 
-    pub fn agent_panel_position(&self, cx: &App) -> Option<DockPosition> {
-        self.all_docks().into_iter().find_map(|dock| {
-            let dock = dock.read(cx);
-            dock.has_agent_panel(cx).then_some(dock.position())
-        })
-    }
-
     pub fn panel_size_state<T: Panel>(&self, cx: &App) -> Option<dock::PanelSizeState> {
         self.all_docks().into_iter().find_map(|dock| {
             let dock = dock.read(cx);
@@ -3015,10 +2976,6 @@ impl Workspace {
 
     pub fn take_panels_task(&mut self) -> Option<Task<Result<()>>> {
         self._panels_task.take()
-    }
-
-    pub fn user_store(&self) -> &Entity<UserStore> {
-        &self.app_state.user_store
     }
 
     pub fn project(&self) -> &Entity<Project> {
@@ -4751,11 +4708,6 @@ impl Workspace {
         let was_visible = self.is_dock_at_position_open(dock_side, cx) && !other_is_zoomed;
 
         if let Some(panel) = self.dock_at_position(dock_side).read(cx).active_panel() {
-            telemetry::event!(
-                "Panel Button Clicked",
-                name = panel.persistent_name(),
-                toggle_state = !was_visible
-            );
         }
         if was_visible {
             self.save_open_dock_positions(cx);
@@ -4924,11 +4876,6 @@ impl Workspace {
             self.close_panel::<T>(window, cx);
         }
 
-        telemetry::event!(
-            "Panel Button Clicked",
-            name = T::persistent_name(),
-            toggle_state = did_focus_panel
-        );
 
         did_focus_panel
     }
@@ -6784,54 +6731,6 @@ impl Workspace {
         }
     }
 
-    pub fn follow_next_collaborator(
-        &mut self,
-        _: &FollowNextCollaborator,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let collaborators = self.project.read(cx).collaborators();
-        let next_leader_id = if let Some(leader_id) = self.leader_for_pane(&self.active_pane) {
-            let mut collaborators = collaborators.keys().copied();
-            for peer_id in collaborators.by_ref() {
-                if CollaboratorId::PeerId(peer_id) == leader_id {
-                    break;
-                }
-            }
-            collaborators.next().map(CollaboratorId::PeerId)
-        } else if let Some(last_leader_id) =
-            self.last_leaders_by_pane.get(&self.active_pane.downgrade())
-        {
-            match last_leader_id {
-                CollaboratorId::PeerId(peer_id) => {
-                    if collaborators.contains_key(peer_id) {
-                        Some(*last_leader_id)
-                    } else {
-                        None
-                    }
-                }
-                CollaboratorId::Agent => Some(CollaboratorId::Agent),
-            }
-        } else {
-            None
-        };
-
-        let pane = self.active_pane.clone();
-        let Some(leader_id) = next_leader_id.or_else(|| {
-            Some(CollaboratorId::PeerId(
-                collaborators.keys().copied().next()?,
-            ))
-        }) else {
-            return;
-        };
-        if self.unfollow_in_pane(&pane, window, cx) == Some(leader_id) {
-            return;
-        }
-        if let Some(task) = self.start_following(leader_id, window, cx) {
-            task.detach_and_log_err(cx)
-        }
-    }
-
     pub fn follow(
         &mut self,
         leader_id: impl Into<CollaboratorId>,
@@ -7481,69 +7380,6 @@ impl Workspace {
         .context("no follower state")?;
 
         Ok(())
-    }
-
-    fn handle_agent_location_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(follower_state) = self.follower_states.get_mut(&CollaboratorId::Agent) else {
-            return;
-        };
-
-        if let Some(agent_location) = self.project.read(cx).agent_location() {
-            let buffer_entity_id = agent_location.buffer.entity_id();
-            let view_id = ViewId {
-                creator: CollaboratorId::Agent,
-                id: buffer_entity_id.as_u64(),
-            };
-            follower_state.active_view_id = Some(view_id);
-
-            let item = match follower_state.items_by_leader_view_id.entry(view_id) {
-                hash_map::Entry::Occupied(entry) => Some(entry.into_mut()),
-                hash_map::Entry::Vacant(entry) => {
-                    let existing_view =
-                        follower_state
-                            .center_pane
-                            .read(cx)
-                            .items()
-                            .find_map(|item| {
-                                let item = item.to_followable_item_handle(cx)?;
-                                if item.buffer_kind(cx) == ItemBufferKind::Singleton
-                                    && item.project_item_model_ids(cx).as_slice()
-                                        == [buffer_entity_id]
-                                {
-                                    Some(item)
-                                } else {
-                                    None
-                                }
-                            });
-                    let view = existing_view.or_else(|| {
-                        agent_location.buffer.upgrade().and_then(|buffer| {
-                            cx.update_default_global(|registry: &mut ProjectItemRegistry, cx| {
-                                registry.build_item(buffer, self.project.clone(), None, window, cx)
-                            })?
-                            .to_followable_item_handle(cx)
-                        })
-                    });
-
-                    view.map(|view| {
-                        entry.insert(FollowerView {
-                            view,
-                            location: None,
-                        })
-                    })
-                }
-            };
-
-            if let Some(item) = item {
-                item.view
-                    .set_leader_id(Some(CollaboratorId::Agent), window, cx);
-                item.view
-                    .update_agent_location(agent_location.position, window, cx);
-            }
-        } else {
-            follower_state.active_view_id = None;
-        }
-
-        self.leader_updated(CollaboratorId::Agent, window, cx);
     }
 
     pub fn update_active_view_for_followers(&mut self, window: &mut Window, cx: &mut App) {
@@ -8418,17 +8254,11 @@ impl Workspace {
             .on_action(cx.listener(Self::save_all))
             .on_action(cx.listener(Self::send_keystrokes))
             .on_action(cx.listener(Self::add_folder_to_project))
-            .on_action(cx.listener(Self::follow_next_collaborator))
             .on_action(cx.listener(Self::activate_pane_at_index))
             .on_action(cx.listener(Self::move_item_to_pane_at_index))
             .on_action(cx.listener(Self::move_focused_panel_to_next_position))
             .on_action(cx.listener(Self::reopen_last_picker))
-            .on_action(cx.listener(Self::toggle_edit_predictions_all_files))
             .on_action(cx.listener(Self::toggle_theme_mode))
-            .on_action(cx.listener(|workspace, _: &Unfollow, window, cx| {
-                let pane = workspace.active_pane().clone();
-                workspace.unfollow_in_pane(&pane, window, cx);
-            }))
             .when(!active_item_is_read_only, |this| {
                 this.on_action(cx.listener(|workspace, action: &Save, window, cx| {
                     workspace
@@ -8808,7 +8638,7 @@ impl Workspace {
         use session::Session;
 
         let client = project.read(cx).client();
-        let user_store = project.read(cx).user_store();
+
         let workspace_store = cx.new(|cx| WorkspaceStore::new(client.clone(), cx));
         let session = cx.new(|cx| AppSession::new(Session::test(), cx));
         window.activate_window();
@@ -8816,7 +8646,7 @@ impl Workspace {
             languages: project.read(cx).languages().clone(),
             workspace_store,
             client,
-            user_store,
+
             fs: project.read(cx).fs().clone(),
             build_window_options: |_, _| Default::default(),
             node_runtime: NodeRuntime::unavailable(),
@@ -9361,19 +9191,6 @@ impl Workspace {
         let size = new_size.min(self.bounds.bottom() - RESIZE_HANDLE_SIZE - self.bounds.top());
         self.bottom_dock.update(cx, |bottom_dock, cx| {
             bottom_dock.resize_panel_sizes(Some(size), None, window, cx);
-        });
-    }
-
-    fn toggle_edit_predictions_all_files(
-        &mut self,
-        _: &ToggleEditPrediction,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let fs = self.project().read(cx).fs().clone();
-        let show_edit_predictions = all_language_settings(None, cx).show_edit_predictions(None, cx);
-        update_settings_file(fs, cx, move |file, _| {
-            file.project.all_languages.defaults.show_edit_predictions = Some(!show_edit_predictions)
         });
     }
 
@@ -10789,41 +10606,6 @@ fn restore_native_window_state(
 }
 
 actions!(
-    collab,
-    [
-        /// Opens the channel notes for the current call.
-        ///
-        /// Use `collab_panel::OpenSelectedChannelNotes` to open the channel notes for the selected
-        /// channel in the collab panel.
-        ///
-        /// If you want to open a specific channel, use `zed::OpenZedUrl` with a channel notes URL -
-        /// can be copied via "Copy link to section" in the context menu of the channel notes
-        /// buffer. These URLs look like `https://zed.dev/channel/channel-name-CHANNEL_ID/notes`.
-        OpenChannelNotes,
-        /// Mutes your microphone.
-        Mute,
-        /// Deafens yourself (mute both microphone and speakers).
-        Deafen,
-        /// Leaves the current call.
-        LeaveCall,
-        /// Shares the current project with collaborators.
-        ShareProject,
-        /// Shares your screen with collaborators.
-        ScreenShare,
-        /// Copies the current room name and session id for debugging purposes.
-        CopyRoomId,
-    ]
-);
-
-/// Opens the channel notes for a specific channel by its ID.
-#[derive(Clone, PartialEq, Deserialize, JsonSchema, Action)]
-#[action(namespace = collab)]
-#[serde(deny_unknown_fields)]
-pub struct OpenChannelNotesById {
-    pub channel_id: u64,
-}
-
-actions!(
     zed,
     [
         /// Opens the Zed log file.
@@ -10833,146 +10615,6 @@ actions!(
     ]
 );
 
-async fn join_channel_internal(
-    channel_id: ChannelId,
-    app_state: &Arc<AppState>,
-    requesting_window: Option<WindowHandle<MultiWorkspace>>,
-    requesting_workspace: Option<WeakEntity<Workspace>>,
-    active_call: &dyn AnyActiveCall,
-    cx: &mut AsyncApp,
-) -> Result<bool> {
-    let (should_prompt, already_in_channel) = cx.update(|cx| {
-        if !active_call.is_in_room(cx) {
-            return (false, false);
-        }
-
-        let already_in_channel = active_call.channel_id(cx) == Some(channel_id);
-        let should_prompt = active_call.is_sharing_project(cx)
-            && active_call.has_remote_participants(cx)
-            && !already_in_channel;
-        (should_prompt, already_in_channel)
-    });
-
-    if already_in_channel {
-        let task = cx.update(|cx| {
-            if let Some((project, host)) = active_call.most_active_project(cx) {
-                Some(join_in_room_project(project, host, app_state.clone(), cx))
-            } else {
-                None
-            }
-        });
-        if let Some(task) = task {
-            task.await?;
-        }
-        return anyhow::Ok(true);
-    }
-
-    if should_prompt {
-        if let Some(multi_workspace) = requesting_window {
-            let answer = multi_workspace
-                .update(cx, |_, window, cx| {
-                    window.prompt(
-                        PromptLevel::Warning,
-                        "Do you want to switch channels?",
-                        Some("Leaving this call will unshare your current project."),
-                        &["Yes, Join Channel", "Cancel"],
-                        cx,
-                    )
-                })?
-                .await;
-
-            if answer == Ok(1) {
-                return Ok(false);
-            }
-        } else {
-            return Ok(false);
-        }
-    }
-
-    let client = cx.update(|cx| active_call.client(cx));
-
-    let mut client_status = client.status();
-
-    // this loop will terminate within client::CONNECTION_TIMEOUT seconds.
-    'outer: loop {
-        let Some(status) = client_status.recv().await else {
-            anyhow::bail!("error connecting");
-        };
-
-        match status {
-            Status::Connecting
-            | Status::Authenticating
-            | Status::Authenticated
-            | Status::Reconnecting
-            | Status::Reauthenticating
-            | Status::Reauthenticated => continue,
-            Status::Connected { .. } => break 'outer,
-            Status::SignedOut | Status::AuthenticationError => {
-                return Err(ErrorCode::SignedOut.into());
-            }
-            Status::UpgradeRequired => return Err(ErrorCode::UpgradeRequired.into()),
-            Status::ConnectionError | Status::ConnectionLost | Status::ReconnectionError { .. } => {
-                return Err(ErrorCode::Disconnected.into());
-            }
-        }
-    }
-
-    let joined = cx
-        .update(|cx| active_call.join_channel(channel_id, cx))
-        .await?;
-
-    if !joined {
-        return anyhow::Ok(true);
-    }
-
-    cx.update(|cx| active_call.room_update_completed(cx)).await;
-
-    let task = cx.update(|cx| {
-        if let Some((project, host)) = active_call.most_active_project(cx) {
-            return Some(join_in_room_project(project, host, app_state.clone(), cx));
-        }
-
-        // If you are the first to join a channel, see if you should share your project.
-        if !active_call.has_remote_participants(cx)
-            && !active_call.local_participant_is_guest(cx)
-            && let Some(workspace) = requesting_workspace.as_ref().and_then(|w| w.upgrade())
-        {
-            let project = workspace.update(cx, |workspace, cx| {
-                let project = workspace.project.read(cx);
-
-                if !active_call.share_on_join(cx) {
-                    return None;
-                }
-
-                if (project.is_local() || project.is_via_remote_server())
-                    && project.visible_worktrees(cx).any(|tree| {
-                        tree.read(cx)
-                            .root_entry()
-                            .is_some_and(|entry| entry.is_dir())
-                    })
-                {
-                    Some(workspace.project.clone())
-                } else {
-                    None
-                }
-            });
-            if let Some(project) = project {
-                let share_task = active_call.share_project(project, cx);
-                return Some(cx.spawn(async move |_cx| -> Result<()> {
-                    share_task.await?;
-                    Ok(())
-                }));
-            }
-        }
-
-        None
-    });
-    if let Some(task) = task {
-        task.await?;
-        return anyhow::Ok(true);
-    }
-    anyhow::Ok(false)
-}
 
 fn serialize_pane_handle(
     pane_handle: &Entity<Pane>,
@@ -11012,111 +10654,6 @@ fn serialize_pane_handle(
     };
 
     SerializedPane::new(items, active, pinned_count)
-}
-
-pub fn join_channel(
-    channel_id: ChannelId,
-    app_state: Arc<AppState>,
-    requesting_window: Option<WindowHandle<MultiWorkspace>>,
-    requesting_workspace: Option<WeakEntity<Workspace>>,
-    cx: &mut App,
-) -> Task<Result<()>> {
-    let active_call = GlobalAnyActiveCall::global(cx).clone();
-    cx.spawn(async move |cx| {
-        let result = join_channel_internal(
-            channel_id,
-            &app_state,
-            requesting_window,
-            requesting_workspace,
-            &*active_call.0,
-            cx,
-        )
-        .await;
-
-        // join channel succeeded, and opened a window
-        if matches!(result, Ok(true)) {
-            return anyhow::Ok(());
-        }
-
-        // find an existing workspace to focus and show call controls
-        let mut active_window = requesting_window.or_else(|| activate_any_workspace_window(cx));
-        if active_window.is_none() {
-            // no open workspaces, make one to show the error in (blergh)
-            let OpenResult {
-                window: window_handle,
-                ..
-            } = cx
-                .update(|cx| {
-                    Workspace::new_local(
-                        vec![],
-                        app_state.clone(),
-                        requesting_window,
-                        None,
-                        None,
-                        OpenMode::Activate,
-                        cx,
-                    )
-                })
-                .await?;
-
-            window_handle
-                .update(cx, |_, window, _cx| {
-                    window.activate_window();
-                })
-                .ok();
-
-            if result.is_ok() {
-                cx.update(|cx| {
-                    cx.dispatch_action(&OpenChannelNotes);
-                });
-            }
-
-            active_window = Some(window_handle);
-        }
-
-        if let Err(err) = result {
-            log::error!("failed to join channel: {}", err);
-            if let Some(active_window) = active_window {
-                active_window
-                    .update(cx, |_, window, cx| {
-                        let detail: SharedString = match err.error_code() {
-                            ErrorCode::SignedOut => "Please sign in to continue.".into(),
-                            ErrorCode::UpgradeRequired => concat!(
-                                "Your are running an unsupported version of Zed. ",
-                                "Please update to continue."
-                            )
-                            .into(),
-                            ErrorCode::NoSuchChannel => concat!(
-                                "No matching channel was found. ",
-                                "Please check the link and try again."
-                            )
-                            .into(),
-                            ErrorCode::Forbidden => concat!(
-                                "This channel is private, and you do not have access. ",
-                                "Please ask someone to add you and try again."
-                            )
-                            .into(),
-                            ErrorCode::Disconnected => {
-                                "Please check your internet connection and try again.".into()
-                            }
-                            _ => format!("{}\n\nPlease try again.", err).into(),
-                        };
-                        window.prompt(
-                            PromptLevel::Critical,
-                            "Failed to join channel",
-                            Some(&detail),
-                            &["OK"],
-                            cx,
-                        )
-                    })?
-                    .await
-                    .ok();
-            }
-        }
-
-        // return ok, we showed the error to the user.
-        anyhow::Ok(())
-    })
 }
 
 pub async fn get_any_active_multi_workspace(
@@ -11468,7 +11005,7 @@ pub fn open_workspace_by_id(
     let project_handle = Project::local(
         app_state.client.clone(),
         app_state.node_runtime.clone(),
-        app_state.user_store.clone(),
+
         app_state.languages.clone(),
         app_state.fs.clone(),
         None,
@@ -11627,24 +11164,12 @@ pub fn open_paths(
 
                     workspace_windows_for_location(&SerializedWorkspaceLocation::Local, cx)
                         .min_by_key(|window| Some(*window) != active_window)
-                        .filter(|window| {
-                            window
-                                .read(cx)
-                                .is_ok_and(|mw| mw.multi_workspace_enabled(cx))
-                        })
                 });
 
                 if let Some(window) = creation_window {
                     window
                         .update(cx, |multi_workspace, _, cx| {
-                            if AgentSettings::get_global(cx).threads_sidebar.auto_open {
-                                multi_workspace.open_sidebar(cx);
-                            } else {
-                                // Opening the sidebar is also what pins the
-                                // workspace we are about to navigate away from,
-                                // so pin it here to keep it in this window.
-                                multi_workspace.retain_active_workspace(cx);
-                            }
+                            multi_workspace.retain_active_workspace(cx);
                         })
                         .log_err();
                 }
@@ -11851,7 +11376,7 @@ pub fn open_remote_project_with_new_connection(
                 session,
                 app_state.client.clone(),
                 app_state.node_runtime.clone(),
-                app_state.user_store.clone(),
+
                 app_state.languages.clone(),
                 app_state.fs.clone(),
                 true,

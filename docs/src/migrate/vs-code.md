@@ -78,7 +78,6 @@ The following VS Code settings are automatically imported when you use **Import 
 | `editor.trimAutoWhitespace`                 | `remove_trailing_whitespace_on_save`           |
 | `editor.suggestOnTriggerCharacters`         | `show_completions_on_input`                    |
 | `editor.suggest.showWords`                  | `completions.words`                            |
-| `editor.inlineSuggest.enabled`              | `show_edit_predictions`                        |
 
 **Files & Workspace**
 
@@ -188,7 +187,7 @@ Zed also supports per-project settings. You can find these in the Settings Edito
 
 ## Open or Create a Project
 
-After setup, press `Cmd+O` (`Ctrl+O` on Linux) to open a folder. By default, new folders open in the current window's threads sidebar, letting you work on multiple projects without juggling windows. See [Windows & Projects](../windows-and-projects.md) for details on managing multiple projects and opening in new windows.
+After setup, press `Cmd+O` (`Ctrl+O` on Linux) to open a folder. By default, new folders open in the current window, letting you work on multiple projects without juggling windows. See [Windows & Projects](../windows-and-projects.md) for details on managing multiple projects and opening in new windows.
 
 To start a new project, create a directory using your terminal or file manager, then open it in Zed. The editor will treat that folder as the root of your project.
 
@@ -261,7 +260,7 @@ Zed takes a different approach.
 
 In Zed:
 
-- **Multiple projects in one window**: You can open multiple folders in the same window. Each appears in the threads sidebar on the left, and you can switch between them while preserving your layout and agent threads. See [Windows & Projects](../windows-and-projects.md).
+- **Multiple projects in one window**: You can open multiple folders in the same window. Switch projects from the title bar or Open Recent while keeping each workspace's layout. See [Windows & Projects](../windows-and-projects.md).
 
 - **No workspace file format**: There’s no `.code-workspace` equivalent. Opening a folder is your project context.
 
@@ -313,27 +312,6 @@ Unlike VS Code, Zed doesn’t require an extension to collaborate. It’s built 
 Once connected, you’ll see each other's cursors, selections, and edits in real time. Voice chat is included, so you can talk as you work. There’s no need for separate tools or third-party logins.
 
 Learn how [Zed uses Zed](https://zed.dev/blog/zed-is-our-office) to plan work and collaborate.
-
-### Using AI in Zed
-
-If you’re used to GitHub Copilot in VS Code, you can do the same in Zed. You can also explore other agents through Zed Pro, or bring your own keys and connect without authentication. You can disable AI features entirely if you prefer.
-
-#### Configuring GitHub Copilot
-
-1. Open Settings with `Cmd+,` (macOS) or `Ctrl+,` (Linux/Windows)
-2. Navigate to **AI → Edit Predictions**
-3. Click **Configure** next to "Configure Providers"
-4. Under **GitHub Copilot**, click **Sign in to GitHub**
-
-Once signed in, just start typing. Zed will offer suggestions inline for you to accept.
-
-#### Additional AI Options
-
-To use other AI models in Zed, you have several options:
-
-- Use Zed’s hosted models, with higher rate limits. Requires [authentication](https://zed.dev/docs/authentication) and access through [Zed Pro](https://zed.dev/docs/account/zed-hosted-models.html).
-- Bring your own [API keys](https://zed.dev/docs/ai/use-api-access.html), no authentication needed
-- Use [External Agents like Claude Agent](https://zed.dev/docs/ai/external-agents.html).
 
 ### Advanced Config and Productivity Tweaks
 

@@ -3964,7 +3964,7 @@ async fn test_remote_diff_prefix_avoids_unnecessary_metadata(
             remote,
             app_state.client.clone(),
             app_state.node_runtime.clone(),
-            app_state.user_store.clone(),
+
             app_state.languages.clone(),
             app_state.fs.clone(),
             false,
@@ -4149,7 +4149,7 @@ async fn test_deleted_remote_history_items_not_shown(
             remote,
             app_state.client.clone(),
             app_state.node_runtime.clone(),
-            app_state.user_store.clone(),
+
             app_state.languages.clone(),
             app_state.fs.clone(),
             false,

@@ -141,20 +141,6 @@ pub trait RemoteClientDelegate: Send + Sync {
         cancellation: oneshot::Receiver<()>,
         cx: &mut AsyncApp,
     );
-    fn get_download_url(
-        &self,
-        platform: RemotePlatform,
-        release_channel: ReleaseChannel,
-        version: Option<Version>,
-        cx: &mut AsyncApp,
-    ) -> Task<Result<Option<String>>>;
-    fn download_server_binary_locally(
-        &self,
-        platform: RemotePlatform,
-        release_channel: ReleaseChannel,
-        version: Option<Version>,
-        cx: &mut AsyncApp,
-    ) -> Task<Result<PathBuf>>;
     fn set_status(&self, status: Option<&str>, cx: &mut AsyncApp);
 }
 
@@ -518,14 +504,6 @@ impl RemoteClient {
                 // Use the same `remote_*` property schema as the forwarded
                 // remote events (see `client::telemetry::report_remote_event`)
                 // so all remote-origin telemetry can be queried uniformly.
-                telemetry::event!(
-                    "Remote Connection Established",
-                    remote = true,
-                    remote_connection_type = connection_type,
-                    remote_os_name = platform.os.display_name(),
-                    remote_os_version = os_version,
-                    remote_architecture = platform.arch.as_str(),
-                );
 
                 Ok(Some(this))
             });

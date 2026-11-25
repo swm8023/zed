@@ -150,10 +150,6 @@ impl ExtensionManifest {
             provides.insert(ExtensionProvides::LanguageServers);
         }
 
-        if !self.context_servers.is_empty() {
-            provides.insert(ExtensionProvides::ContextServers);
-        }
-
         if self.snippets.is_some() {
             provides.insert(ExtensionProvides::Snippets);
         }

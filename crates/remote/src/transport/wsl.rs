@@ -241,16 +241,15 @@ impl WslRemoteConnection {
                 .map_err(|e| e.context("Failed to create directory"))?;
         }
 
-        let binary_exists_on_server = self
-            .run_wsl_command(&dst_path.display(PathStyle::Unix), &["version"])
-            .await
-            .is_ok();
+        let deployed_version = self
+            .run_wsl_command_with_output(&dst_path.display(PathStyle::Unix), &["version", "--package"])
+            .await;
 
         #[cfg(any(debug_assertions, feature = "build-remote-server-binary"))]
         if let Some(remote_server_path) = super::build_remote_server_from_source(
             &self.platform,
             delegate.as_ref(),
-            binary_exists_on_server,
+            deployed_version.is_ok(),
             cx,
         )
         .await?
@@ -270,30 +269,12 @@ impl WslRemoteConnection {
             return Ok(dst_path.into());
         }
 
-        if binary_exists_on_server {
-            return Ok(dst_path.into());
-        }
-
-        let wanted_version = match release_channel {
-            ReleaseChannel::Nightly | ReleaseChannel::Dev => None,
-            _ => Some(cx.update(|cx| AppVersion::global(cx))),
-        };
-
-        let src_path = delegate
-            .download_server_binary_locally(self.platform, release_channel, wanted_version, cx)
-            .await?;
-
-        let tmp_path = format!(
-            "{}.{}.gz",
-            dst_path.display(PathStyle::Unix),
-            std::process::id()
-        );
-        let tmp_path = RelPath::from_unix_str(&tmp_path).unwrap();
-
-        self.upload_file(&src_path, &tmp_path, delegate, cx).await?;
-        self.extract_and_install(&tmp_path, &dst_path, delegate, cx)
-            .await?;
-
+        super::check_deployed_server(
+            &dst_path.display(self.path_style()),
+            release_channel,
+            version,
+            deployed_version,
+        )?;
         Ok(dst_path.into())
     }
 

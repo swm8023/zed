@@ -348,7 +348,6 @@ impl CommitView {
             editor.rhs_editor().update(cx, |editor, cx| {
                 editor.set_show_bookmarks(false, cx);
                 editor.set_show_breakpoints(false, cx);
-                editor.set_show_diff_review_button(true, cx);
             });
 
             editor
@@ -1489,7 +1488,6 @@ impl Item for CommitView {
                     editor.rhs_editor().update(cx, |editor, cx| {
                         editor.set_show_bookmarks(false, cx);
                         editor.set_show_breakpoints(false, cx);
-                        editor.set_show_diff_review_button(true, cx);
                         editor.register_addon(CommitDiffAddon {
                             file_statuses,
                             commit_view,
@@ -1696,7 +1694,6 @@ mod tests {
             let settings_store = SettingsStore::test(cx);
             cx.set_global(settings_store);
             theme_settings::init(theme::LoadThemes::JustBase, cx);
-            language_model::init(cx);
             editor::init(cx);
             crate::init(cx);
         });

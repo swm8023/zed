@@ -48,7 +48,6 @@ settings.workspace = true
 smallvec.workspace = true
 smol.workspace = true
 task.workspace = true
-telemetry.workspace = true
 util.workspace = true
 
 [dev-dependencies]

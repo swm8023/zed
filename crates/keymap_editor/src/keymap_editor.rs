@@ -713,12 +713,6 @@ impl KeymapEditor {
                     .collect::<Vec<String>>()
                     .join(" ");
 
-                telemetry::event!(
-                    "Keystroke Search Completed",
-                    action_query = action_query,
-                    keystroke_query = keystroke_query,
-                    keystroke_exact_match = exact_match
-                )
             }
         }));
         cx.spawn(async move |this, cx| {
@@ -1354,14 +1348,6 @@ impl KeymapEditor {
         let action = keybind.action().name;
         let source = keybind.keybind_source().map(|source| source.name());
 
-        telemetry::event!(
-            "Edit Keybinding Modal Opened",
-            keystroke = keystroke,
-            action = action,
-            source = source,
-            context = context,
-            arguments = arguments,
-        );
 
         let temp_dir = self.action_args_temp_dir.as_ref().map(|dir| dir.path());
 
@@ -1489,7 +1475,6 @@ impl KeymapEditor {
             return;
         };
 
-        telemetry::event!("Keybinding Context Copied", context = context);
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(context));
     }
 
@@ -1506,7 +1491,6 @@ impl KeymapEditor {
             return;
         };
 
-        telemetry::event!("Keybinding Action Copied", action = action);
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(action));
     }
 
@@ -3359,7 +3343,6 @@ impl ActionArgumentsEditor {
                     editor.disable_mouse_wheel_zoom();
                     editor.set_searchable(false);
                     editor.disable_scrollbars_and_minimap(window, cx);
-                    editor.set_show_edit_predictions(Some(false), window, cx);
                     editor.set_show_gutter(false, cx);
                     Self::set_editor_text(&mut editor, arguments, window, cx);
                     editor
@@ -3702,12 +3685,6 @@ async fn save_keybinding_update(
     .await
     .context("Failed to write keymap file")?;
 
-    telemetry::event!(
-        "Keybinding Updated",
-        new_keybinding = new_keybinding,
-        removed_keybinding = removed_keybinding,
-        source = source
-    );
     Ok(())
 }
 
@@ -3757,12 +3734,6 @@ async fn remove_keybinding(
     .await
     .context("Failed to write keymap file")?;
 
-    telemetry::event!(
-        "Keybinding Removed",
-        new_keybinding = new_keybinding,
-        removed_keybinding = removed_keybinding,
-        source = source
-    );
     Ok(())
 }
 

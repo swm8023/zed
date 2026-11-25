@@ -1,7 +1,6 @@
 syntax = "proto3";
 package zed.messages;
 
-import "ai.proto";
 import "app.proto";
 import "buffer.proto";
 import "call.proto";
@@ -19,6 +18,7 @@ import "worktree.proto";
 
 // Looking for a number? Search "// current max"
 message Envelope {
+  reserved 373 to 377, 401, 411, 412, 462 to 465;
   uint32 id = 1;
   optional uint32 responding_to = 2;
   optional PeerId original_sender_id = 3;
@@ -59,10 +59,6 @@ message Envelope {
 
     GetDefinition get_definition = 32;
     GetDefinitionResponse get_definition_response = 33;
-    GetEditPredictionDefinition get_edit_prediction_definition = 462;
-    GetEditPredictionDefinitionResponse get_edit_prediction_definition_response = 463;
-    GetEditPredictionTypeDefinition get_edit_prediction_type_definition = 464;
-    GetEditPredictionTypeDefinitionResponse get_edit_prediction_type_definition_response = 465;
     GetDeclaration get_declaration = 237;
     GetDeclarationResponse get_declaration_response = 238;
     GetTypeDefinition get_type_definition = 34;
@@ -378,8 +374,6 @@ message Envelope {
     GetDefaultBranch get_default_branch = 359;
     GetDefaultBranchResponse get_default_branch_response = 360;
 
-    GetCrashFiles get_crash_files = 361;
-    GetCrashFilesResponse get_crash_files_response = 362;
 
     GitClone git_clone = 363;
     GitCloneResponse git_clone_response = 364;
@@ -396,12 +390,7 @@ message Envelope {
     ResolveToolchain resolve_toolchain = 371;
     ResolveToolchainResponse resolve_toolchain_response = 372;
 
-    GetAgentServerCommand get_agent_server_command = 373;
-    AgentServerCommand agent_server_command = 374;
 
-    ExternalAgentsUpdated external_agents_updated = 375;
-    ExternalAgentLoadingStatusUpdated external_agent_loading_status_updated = 376;
-    NewExternalAgentVersionAvailable new_external_agent_version_available = 377;
 
     StashDrop stash_drop = 378;
     StashApply stash_apply = 379;
@@ -431,7 +420,6 @@ message Envelope {
 
     GitDeleteBranch git_delete_branch = 400;
 
-    ExternalExtensionAgentsUpdated external_extension_agents_updated = 401;
 
     GitCreateRemote git_create_remote = 402;
     GitRemoveRemote git_remove_remote = 403;
@@ -441,8 +429,6 @@ message Envelope {
 
     FindSearchCandidatesChunk find_search_candidates_chunk = 409;
     FindSearchCandidatesCancelled find_search_candidates_cancelled = 410;
-    GetContextServerCommand get_context_server_command = 411;
-    ContextServerCommand context_server_command = 412;
 
     AllocateWorktreeId allocate_worktree_id = 413;
     AllocateWorktreeIdResponse allocate_worktree_id_response = 414;
@@ -484,7 +470,6 @@ message Envelope {
     ResolveDocumentLinkResponse resolve_document_link_response = 456;
     GitWorktreeCreatedAt git_worktree_created_at = 457;
     GitWorktreeCreatedAtResponse git_worktree_created_at_response = 458;
-    TelemetryEvent telemetry_event = 459;
     ResolveCodeAction resolve_code_action = 460;
     ResolveCodeActionResponse resolve_code_action_response = 461;
     TrashProjectEntry trash_project_entry = 466;
@@ -546,6 +531,7 @@ message Envelope {
   reserved 211 to 216, 232 to 233;
   reserved 397 to 398;
   reserved 406 to 408;
+  reserved 361 to 362, 459;
   reserved 433 to 439;
 }
 

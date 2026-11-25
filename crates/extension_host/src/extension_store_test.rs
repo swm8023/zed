@@ -1,5 +1,5 @@
 use crate::{
-    Event, ExtensionIndex, ExtensionIndexEntry, ExtensionIndexLanguageEntry,
+    Event, ExtensionIndex, ExtensionIndexEntry, ExtensionIndexLanguageEntry, ExtensionStatus,
     ExtensionIndexThemeEntry, ExtensionManifest, ExtensionStore, GrammarManifestEntry,
     MAX_REMOTE_SYNC_ATTEMPTS, MAX_REMOTE_SYNC_RETRY_DELAY, RELOAD_DEBOUNCE_DURATION,
     REMOTE_SYNC_TIMEOUT, SchemaVersion,
@@ -14,11 +14,10 @@ use async_trait::async_trait;
 use client::{AnyProtoClient, TypedEnvelope, proto};
 use collections::{BTreeMap, HashMap, HashSet};
 use extension::{
-    BuildTaskTemplate, CodeLabel, Command, Completion, ContextServerConfiguration,
-    DebugAdapterBinary, DebugRequest, DebugScenario, DebugTaskDefinition, Extension,
-    ExtensionHostProxy, KeyValueStoreDelegate, LibManifestEntry, ProjectDelegate, SlashCommand,
-    SlashCommandArgumentCompletion, SlashCommandOutput, StartDebuggingRequestArgumentsRequest,
-    Symbol, WorktreeDelegate,
+    BuildTaskTemplate, CodeLabel, Command, Completion, DebugAdapterBinary, DebugRequest,
+    DebugScenario, DebugTaskDefinition, Extension, ExtensionHostProxy, KeyValueStoreDelegate,
+    LibManifestEntry, ProjectDelegate, SlashCommand, SlashCommandArgumentCompletion,
+    SlashCommandOutput, StartDebuggingRequestArgumentsRequest, Symbol, WorktreeDelegate,
 };
 use fs::{FakeFs, Fs, RealFs, RemoveOptions};
 use futures::{AsyncReadExt, FutureExt, StreamExt, io::BufReader};
@@ -528,7 +527,6 @@ async fn test_extension_store(cx: &mut TestAppContext) {
             fs.clone(),
             http_client.clone(),
             http_client.clone(),
-            None,
             node_runtime.clone(),
             cx,
         )
@@ -678,7 +676,6 @@ async fn test_extension_store(cx: &mut TestAppContext) {
             fs.clone(),
             http_client.clone(),
             http_client.clone(),
-            None,
             node_runtime.clone(),
             cx,
         )
@@ -772,6 +769,111 @@ async fn test_extension_store(cx: &mut TestAppContext) {
         );
         assert_eq!(language_registry.grammar_names(), []);
     });
+}
+
+#[gpui::test]
+async fn test_marketplace_install_can_retry_without_affecting_local_extensions(
+    cx: &mut TestAppContext,
+) {
+    init_test(cx);
+    let executor = cx.executor();
+    executor.allow_parking();
+    let extensions = TempTree::new(json!({
+        "installed": {
+            "local-extension": {
+                "extension.toml": "id = 'local-extension'\nname = 'Local extension'\nversion = '0.1.0'\nschema_version = 1"
+            }
+        }
+    }));
+    let extensions_dir = extensions.path().canonicalize().unwrap();
+    let mut archive = async_tar::Builder::new(Vec::new());
+    let manifest = b"id = 'test-theme'\nname = 'Marketplace theme'\nversion = '1.0.0'\nschema_version = 1";
+    let mut header = async_tar::Header::new_gnu();
+    header.set_size(manifest.len() as u64);
+    archive.append_data(&mut header, "extension.toml", manifest.as_slice()).await.unwrap();
+    let archive = archive.into_inner().await.unwrap();
+    let mut package = Vec::new();
+    GzipEncoder::new(BufReader::new(archive.as_slice()))
+        .read_to_end(&mut package)
+        .await
+        .unwrap();
+    let downloads = Arc::new(AtomicUsize::new(0));
+    let client = FakeHttpClient::create({
+        let downloads = downloads.clone();
+        move |request| {
+            let package = package.clone();
+            let downloads = downloads.clone();
+            async move {
+                if request.uri().path() == "/extensions"
+                    && request.uri().query().is_some_and(|query| query.contains("filter=test-theme"))
+                {
+                    Ok(Response::new(json!({
+                        "data": [{
+                            "id": "test-theme", "name": "Marketplace theme", "version": "1.0.0",
+                            "authors": ["Example"], "repository": "https://example.com/theme",
+                            "schema_version": 1, "provides": ["themes"]
+                        }]
+                    }).to_string().into()))
+                } else if request.uri().path() == "/extensions/test-theme/1.0.0/download"
+                    && downloads.fetch_add(1, Ordering::SeqCst) > 0
+                {
+                    Ok(Response::new(package.into()))
+                } else {
+                    Ok(Response::builder().status(503).body("unavailable".into())?)
+                }
+            }
+        }
+    });
+    let fs = RealFs::new(None, executor.clone());
+    let store = cx.new(|cx| {
+        ExtensionStore::new(
+            extensions_dir.clone(),
+            None,
+            Arc::new(ExtensionHostProxy::new()),
+            fs,
+            client.clone(),
+            client,
+            NodeRuntime::unavailable(),
+            cx,
+        )
+    });
+    let mut events = cx.events(&store);
+    let _timer = cx.executor().spawn(async move {
+        while let Some(event) = events.next().await {
+            if let Event::StartedReloading = event {
+                executor.advance_clock(RELOAD_DEBOUNCE_DURATION);
+            }
+        }
+    });
+
+    let catalog = store.update(cx, |store, cx| store.fetch_marketplace_extensions("", None, cx));
+    assert!(catalog.await.err().unwrap().to_string().contains("503"));
+    let catalog = store
+        .update(cx, |store, cx| store.fetch_marketplace_extensions("id:test-theme", None, cx))
+        .await
+        .unwrap();
+    let [entry] = catalog.as_slice() else {
+        panic!("expected one matching extension");
+    };
+    let install = |store: &mut ExtensionStore, cx: &mut gpui::Context<ExtensionStore>| {
+        store.install_marketplace_extension(entry.id.clone(), entry.manifest.version.clone(), cx)
+    };
+    assert!(store.update(cx, install).await.is_err());
+    assert!(!extensions_dir.join("installed/test-theme").exists());
+    assert_eq!(
+        store.read_with(cx, |store, _| store.extension_status("test-theme")),
+        ExtensionStatus::NotInstalled
+    );
+
+    store.update(cx, install).await.unwrap();
+    store.read_with(cx, |store, _| {
+        assert_eq!(
+            store.extension_status("test-theme"),
+            ExtensionStatus::Installed("1.0.0".into())
+        );
+        assert!(store.installed_extensions().contains_key("local-extension"));
+    });
+    assert_eq!(downloads.load(Ordering::SeqCst), 2);
 }
 
 #[gpui::test]
@@ -937,7 +1039,6 @@ async fn test_extension_store_with_test_extension(cx: &mut TestAppContext) {
             fs.clone(),
             extension_client.clone(),
             builder_client,
-            None,
             node_runtime,
             cx,
         )
@@ -4129,7 +4230,6 @@ fn create_extension_store_with(
             fs,
             http_client.clone(),
             http_client,
-            None,
             node_runtime,
             cx,
         )
@@ -4302,22 +4402,6 @@ impl Extension for FakeExtension {
         _arguments: Vec<String>,
         _worktree: Option<Arc<dyn WorktreeDelegate>>,
     ) -> anyhow::Result<SlashCommandOutput> {
-        anyhow::bail!("not supported by FakeExtension")
-    }
-
-    async fn context_server_command(
-        &self,
-        _context_server_id: Arc<str>,
-        _project: Arc<dyn ProjectDelegate>,
-    ) -> anyhow::Result<Command> {
-        anyhow::bail!("not supported by FakeExtension")
-    }
-
-    async fn context_server_configuration(
-        &self,
-        _context_server_id: Arc<str>,
-        _project: Arc<dyn ProjectDelegate>,
-    ) -> anyhow::Result<Option<ContextServerConfiguration>> {
         anyhow::bail!("not supported by FakeExtension")
     }
 

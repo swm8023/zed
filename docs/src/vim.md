@@ -144,15 +144,15 @@ These commands open new panes or jump to specific panes.
 
 ### In insert mode
 
-The following commands help you bring up Zed's completion menu, request a suggestion from GitHub Copilot, or open the inline AI assistant without leaving insert mode.
+The following commands help you bring up Zed's completion menu, request an edit prediction, or open the inline AI assistant without leaving insert mode.
 
-| Command                                                                      | Default Shortcut |
-| ---------------------------------------------------------------------------- | ---------------- |
-| Open the completion menu                                                     | `ctrl-x ctrl-o`  |
-| Request GitHub Copilot suggestion (requires GitHub Copilot to be configured) | `ctrl-x ctrl-c`  |
-| Open the inline AI assistant (requires a configured assistant)               | `ctrl-x ctrl-a`  |
-| Open the code actions menu                                                   | `ctrl-x ctrl-l`  |
-| Hides all suggestions                                                        | `ctrl-x ctrl-z`  |
+| Command                                                        | Default Shortcut |
+| -------------------------------------------------------------- | ---------------- |
+| Open the completion menu                                       | `ctrl-x ctrl-o`  |
+| Request an edit prediction                                     | `ctrl-x ctrl-c`  |
+| Open the inline AI assistant (requires a configured assistant) | `ctrl-x ctrl-a`  |
+| Open the code actions menu                                     | `ctrl-x ctrl-l`  |
+| Hides all suggestions                                          | `ctrl-x ctrl-z`  |
 
 ### Supported plugins
 
@@ -470,7 +470,7 @@ Here's a template with useful vim mode contexts to help you customize your vim m
 
 By default, you can navigate between the different files open in the editor with shortcuts like `ctrl+w` followed by one of `hjkl` to move to the left, down, up, or right, respectively.
 
-But you cannot use the same shortcuts to move between all the editor docks (the terminal, project panel, agent panel, ...). If you want to use the same shortcuts to navigate to the docks, you can add the following key bindings to your user keymap.
+But you cannot use the same shortcuts to move between all the editor docks (the terminal, project panel, and other panels). If you want to use the same shortcuts to navigate to the docks, you can add the following key bindings to your user keymap.
 
 ```json [keymap]
 {

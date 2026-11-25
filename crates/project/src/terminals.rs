@@ -864,12 +864,12 @@ mod tests {
                 http_client::FakeHttpClient::with_404_response(),
                 cx,
             );
-            let user_store = cx.new(|cx| client::UserStore::new(client.clone(), cx));
+
             Project::remote(
                 remote_client,
                 client,
                 node_runtime::NodeRuntime::unavailable(),
-                user_store,
+
                 Arc::new(language::LanguageRegistry::test(
                     cx.background_executor().clone(),
                 )),

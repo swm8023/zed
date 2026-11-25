@@ -355,27 +355,6 @@ PyCharm offers Code With Me as a separate plugin for collaboration. Zed has coll
 
 Once connected, you'll see each other's cursors, selections, and edits in real time. Voice chat is included. There's no need for separate tools or third-party logins.
 
-## Using AI in Zed
-
-If you're used to AI assistants in PyCharm (like GitHub Copilot or JetBrains AI Assistant), Zed offers similar capabilities with more flexibility.
-
-### Configuring GitHub Copilot
-
-1. Open Settings with `Cmd+,` (macOS) or `Ctrl+,` (Linux/Windows)
-2. Navigate to **AI → Edit Predictions**
-3. Click **Configure** next to "Configure Providers"
-4. Under **GitHub Copilot**, click **Sign in to GitHub**
-
-Once signed in, just start typing. Zed will offer suggestions inline for you to accept.
-
-### Additional AI Options
-
-To use other AI models in Zed, you have several options:
-
-- Use Zed's hosted models, with higher rate limits. Requires [authentication](https://zed.dev/docs/authentication) and access through [Zed Pro](https://zed.dev/docs/account/zed-hosted-models.html).
-- Bring your own [API keys](https://zed.dev/docs/ai/use-api-access.html), no authentication needed
-- Use [External Agents like Claude Agent](https://zed.dev/docs/ai/external-agents.html)
-
 ## Advanced Config and Productivity Tweaks
 
 Zed exposes advanced settings for power users who want to fine-tune their environment.
@@ -428,6 +407,4 @@ Now that you're set up, here are some resources to help you get the most out of 
 - [All Settings](../reference/all-settings.md) — Customize settings, themes, and editor behavior
 - [Key Bindings](../key-bindings.md) — Learn how to customize and extend your keymap
 - [Tasks](../tasks.md) — Set up build and run commands for your projects
-- [AI Features](../ai/overview.md) — Explore Zed's AI capabilities beyond code completion
-- [Collaboration](../collaboration/overview.md) — Share your projects and code together in real time
 - [Python in Zed](../languages/python.md) — Python-specific setup and configuration

@@ -112,151 +112,6 @@ Non-negative `float` values
 }
 ```
 
-## Agent Panel {#agent-panel}
-
-To configure panel sizing, open the Settings Editor and search for “Agent Panel Default Width” or “Agent Panel Flexible Sizing”.
-
-### Default Width {#agent-panel-default-width}
-
-- Description: Default fixed width in pixels when the agent panel is docked to the left or right and `agent.flexible` is `false`.
-- Setting: `agent.default_width`
-- Default: `640`
-
-### Flexible Sizing {#agent-panel-flexible-sizing}
-
-- Description: Whether the agent panel uses flexible (proportional) sizing when docked to the left or right. When enabled, `agent.default_width` does not control the panel width, and double-clicking the panel's outer resize handle restores the default proportion.
-- Setting: `agent.flexible`
-- Default: `true`
-
-**Options**
-
-`boolean` values
-
-To use a fixed reset width, disable flexible sizing in the Settings Editor. Or add this to your settings.json:
-
-```json [settings]
-{
-  "agent": {
-    "default_width": 640,
-    "flexible": false
-  }
-}
-```
-
-See [Agent Panel visual customization](../visual-customization.md#agent-panel) for other panel appearance settings.
-
-### Threads Sidebar Position {#agent-threads-sidebar-position}
-
-- Description: Which side of the window displays the [Threads Sidebar](../ai/parallel-agents.md#threads-sidebar).
-- Setting: `agent.threads_sidebar.position`
-- Default: `"left"`
-
-**Options**
-
-`"left"` or `"right"`.
-
-Open the Settings Editor and search for “Threads Sidebar Position”. Or add this to your `settings.json`:
-
-```json [settings]
-{
-  "agent": {
-    "threads_sidebar": {
-      "position": "right"
-    }
-  }
-}
-```
-
-### Threads Sidebar Default Width {#agent-threads-sidebar-default-width}
-
-- Description: Default width in pixels of the [Threads Sidebar](../ai/parallel-agents.md#threads-sidebar).
-- Setting: `agent.threads_sidebar.default_width`
-- Default: `300`
-
-**Options**
-
-Numbers from `200` to `800` pixels (inclusive). Values outside this range are clamped to the nearest limit.
-
-Open the Settings Editor and search for “Threads Sidebar Default Width”. Or add this to your `settings.json`:
-
-```json [settings]
-{
-  "agent": {
-    "threads_sidebar": {
-      "default_width": 360
-    }
-  }
-}
-```
-
-Changing this setting immediately updates the sidebar width, even if you previously resized it manually. You can also double-click the divider to reset the sidebar to the configured width.
-
-Widths saved by older versions of Zed are preserved if they differ from the previous default of 300 pixels. A saved width of 300 pixels uses this setting instead.
-
-### Threads Sidebar Auto Open {#agent-threads-sidebar-auto-open}
-
-- Description: Whether opening a folder in an existing window automatically opens the [Threads Sidebar](../ai/parallel-agents.md#threads-sidebar).
-- Setting: `agent.threads_sidebar.auto_open`
-- Default: `true`
-
-**Options**
-
-`true` or `false`.
-
-This applies when a folder opens in an existing window instead of a new one, which happens when `default_open_behavior` or `cli_default_open_behavior` is set to `existing_window`. With `false`, the folder still opens in that window, but the sidebar stays closed until you open it with {#action multi_workspace::ToggleWorkspaceSidebar}.
-
-Open the Settings Editor and search for “Threads Sidebar Auto Open”. Or add this to your `settings.json`:
-
-```json [settings]
-{
-  "agent": {
-    "threads_sidebar": {
-      "auto_open": false
-    }
-  }
-}
-```
-
-## Agent UI Font Family {#agent-ui-font-family}
-
-- Description: Font family for agent responses in the Agent Panel.
-- Setting: `agent_ui_font_family`
-- Default: `null` (inherits `ui_font_family`)
-
-**Options**
-
-A font family name, or leave unset to inherit the configured `ui_font_family`.
-
-## Agent Buffer Font Family {#agent-buffer-font-family}
-
-- Description: Font family for the Agent Panel's message editor, user messages, and code.
-- Setting: `agent_buffer_font_family`
-- Default: `null` (inherits `buffer_font_family`)
-
-**Options**
-
-A font family name, or leave unset to inherit the configured `buffer_font_family`.
-
-## Agent Buffer Font Size {#agent-buffer-font-size}
-
-- Description: Font size for the Agent Panel's message editor, user messages, and code, in pixels.
-- Setting: `agent_buffer_font_size`
-- Default: `12`
-
-**Options**
-
-Numbers from `6` to `100` pixels, inclusive.
-
-## Agent UI Font Size
-
-- Description: The font size for text in the agent panel. Inherits the UI font size if unset.
-- Setting: `agent_ui_font_size`
-- Default: `null`
-
-**Options**
-
-`integer` values from `6` to `100` pixels (inclusive)
-
 ## Allow Rewrap
 
 - Description: Controls where the {#action editor::Rewrap} action is allowed in the current language scope
@@ -333,46 +188,6 @@ Numbers from `6` to `100` pixels, inclusive.
 
 `boolean` values
 
-## Auto Install extensions
-
-- Description: Define extensions to install automatically or never install.
-- Setting: `auto_install_extensions`
-- Default: `{ "html": true }`
-
-**Options**
-
-You can find the names of your currently installed extensions by listing the subfolders under the [extension installation location](../extensions/installing-extensions.md#installation-location):
-
-On macOS:
-
-```sh
-ls ~/Library/Application\ Support/Zed/extensions/installed/
-```
-
-On Linux:
-
-```sh
-ls ~/.local/share/zed/extensions/installed
-```
-
-On Windows:
-
-```pwsh
-Get-ChildItem "$env:LOCALAPPDATA\Zed\extensions\installed" -Name
-```
-
-Define extensions which should be installed (`true`) or never installed (`false`).
-
-```json [settings]
-{
-  "auto_install_extensions": {
-    "html": true,
-    "dockerfile": true,
-    "docker-compose": false
-  }
-}
-```
-
 ## Suggest Extensions
 
 - Description: Whether to suggest installing extensions based on the files you open.
@@ -388,28 +203,6 @@ Define extensions which should be installed (`true`) or never installed (`false`
   "suggest_extensions": false
 }
 ```
-
-## Auto Update extensions
-
-- Description: Disable auto-updates for specific extensions.
-- Setting: `auto_update_extensions`
-- Default: `{}`
-
-**Options**
-
-By default, every installed extension is auto-updated when Zed starts.
-Add an extension here with `false` to pin it to its currently installed version.
-
-```json [settings]
-{
-  "auto_update_extensions": {
-    "html": false
-  }
-}
-```
-
-Selecting **Install Another Version…** from an extension's `⋯` menu on the Extensions
-page ({#action zed::Extensions}) does this automatically.
 
 ## Granted Extension Capabilities {#granted-extension-capabilities}
 
@@ -434,27 +227,6 @@ By default, no limitations are applied to extensions.
 
 Patterns are not globs: `*` matches exactly one whole value, such as a command, host, package, argument, or path segment, and `**` as the last element matches all remaining ones.
 See [Restricting Capabilities](../extensions/capabilities.md#restricting-capabilities) for examples.
-
-## Audio {#audio}
-
-- Description: Select audio devices for calls.
-- Setting: `audio`
-- Default:
-
-```json [settings]
-{
-  "audio": {
-    "experimental.output_audio_device": null,
-    "experimental.input_audio_device": null
-  }
-}
-```
-
-Select devices in the Settings Editor, which stores their device IDs in these fields.
-Use `null` for the system default.
-Unavailable devices fall back to the system default.
-The dots are part of the literal property names, not nested objects.
-See [Audio Settings](../collaboration/overview.md#audio-settings) for more information.
 
 ## Autosave
 
@@ -527,16 +299,6 @@ Note that a save will be triggered when an unsaved tab is closed, even if this i
 - Description: Whether to show the signature help after completion or a bracket pair inserted. If `auto_signature_help` is enabled, this setting will be treated as enabled also.
 - Setting: `show_signature_help_after_edits`
 - Default: `false`
-
-**Options**
-
-`boolean` values
-
-## Auto Update
-
-- Description: Whether or not to automatically check for updates.
-- Setting: `auto_update`
-- Default: `true`
 
 **Options**
 
@@ -830,24 +592,6 @@ See [Editor completion settings](../visual-customization.md#editor-lsp).
 
 `boolean` values
 
-## Copilot {#copilot}
-
-- Description: Shared Copilot Chat and edit-prediction settings.
-- Setting: `copilot`
-- Default:
-
-```json [settings]
-{
-  "copilot": {
-    "enterprise_uri": null
-  }
-}
-```
-
-Set `enterprise_uri` to your enterprise instance URL.
-Prediction-specific settings belong under `edit_predictions.copilot`.
-See [Copilot Enterprise](../ai/use-an-existing-subscription.md#copilot-enterprise).
-
 ## Diagnostics Max Severity
 
 - Description: Which level to use to filter out diagnostics displayed in the editor
@@ -933,16 +677,6 @@ See [Diff View Styles](../git.md#diff-view-styles).
 
 See [Word Diff Highlighting](../git.md#word-diff-highlighting).
 
-## Disable AI
-
-- Description: Whether to disable all AI features in Zed
-- Setting: `disable_ai`
-- Default: `false`
-
-**Options**
-
-`boolean` values
-
 ## Direnv Integration
 
 - Description: Settings for [direnv](https://direnv.net/) integration. Requires `direnv` to be installed.
@@ -994,279 +728,6 @@ For the case of "open", regular selection behavior can be achieved by holding `a
 **Options**
 
 `float` values between `0` and `0.5`
-
-## Edit Predictions
-
-- Description: Settings for edit predictions.
-- Setting: `edit_predictions`
-- Default:
-
-```json [settings]
-{
-  "edit_predictions": {
-    "disabled_globs": [
-      "**/.env*",
-      "**/*.pem",
-      "**/*.key",
-      "**/*.cert",
-      "**/*.crt",
-      "**/.dev.vars",
-      "**/secrets.yml",
-      "**/.zed/settings.json",
-      "/**/zed/settings.json",
-      "/**/zed/keymap.json"
-    ]
-  }
-}
-```
-
-**Options**
-
-### Edit Prediction Provider
-
-- Description: Which edit prediction provider to use
-- Setting: `provider`
-- Default: `"zed"`
-
-**Options**
-
-1. Use Zeta as the edit prediction provider:
-
-```json [settings]
-{
-  "edit_predictions": {
-    "provider": "zed"
-  }
-}
-```
-
-2. Use Copilot as the edit prediction provider:
-
-```json [settings]
-{
-  "edit_predictions": {
-    "provider": "copilot"
-  }
-}
-```
-
-3. Turn off edit predictions across all providers
-
-```json [settings]
-{
-  "edit_predictions": {
-    "provider": "none"
-  }
-}
-```
-
-Other provider values are `"codestral"`, `"ollama"`, `"open_ai_compatible_api"`, and `"mercury"`.
-See [Other Providers](../ai/edit-prediction.md#other-providers) for setup.
-
-### Display and Data Collection {#edit-prediction-display-and-data-collection}
-
-These settings belong inside the `edit_predictions` object.
-
-| Setting                 | Default     | Description                                                                                         |
-| ----------------------- | ----------- | --------------------------------------------------------------------------------------------------- |
-| `mode`                  | `"eager"`   | Use `"eager"` for inline predictions, or `"subtle"` to preview with a modifier key where supported. |
-| `allow_data_collection` | `"default"` | Training-data preference for Zed's edit predictions: `"default"`, `"yes"`, or `"no"`.               |
-
-`"default"` uses the preference saved from the status bar, or disabled if none is saved.
-`"yes"` opts in and `"no"` opts out, subject to account and organization policy.
-Only open-source projects are eligible.
-Other providers' data policies are not affected.
-See [Switching Modes](../ai/edit-prediction.md#switching-modes) and [Edit Prediction Training Data](../ai/ai-improvement.md#edit-predictions).
-
-### Copilot Predictions {#edit-predictions-copilot}
-
-- Description: GitHub Copilot settings for edit predictions.
-- Setting: `copilot`
-- Default:
-
-```json [settings]
-{
-  "edit_predictions": {
-    "copilot": {
-      "proxy": null,
-      "proxy_no_verify": null,
-      "enable_next_edit_suggestions": true
-    }
-  }
-}
-```
-
-**Options**
-
-- `proxy`: HTTP or HTTPS proxy URL for the Copilot language server.
-- `proxy_no_verify`: Skip certificate verification for the proxy when `true`; not recommended.
-- `enable_next_edit_suggestions`: Enable Copilot Next Edit Suggestions.
-
-### Codestral Predictions {#edit-predictions-codestral}
-
-- Description: Codestral settings for edit predictions.
-- Setting: `codestral`
-- Default:
-
-```json [settings]
-{
-  "edit_predictions": {
-    "codestral": {
-      "api_url": "https://codestral.mistral.ai",
-      "model": "codestral-latest",
-      "max_tokens": 150
-    }
-  }
-}
-```
-
-**Options**
-
-- `api_url`: Codestral API URL.
-- `model`: Model used for completions.
-- `max_tokens`: Maximum generated tokens per completion.
-
-### Ollama Predictions {#edit-predictions-ollama}
-
-- Description: Ollama settings for edit predictions.
-- Setting: `ollama`
-- Default:
-
-```json [settings]
-{
-  "edit_predictions": {
-    "ollama": {
-      "api_url": "http://localhost:11434",
-      "model": "qwen2.5-coder:7b-base",
-      "prompt_format": "infer",
-      "max_output_tokens": 64
-    }
-  }
-}
-```
-
-**Options**
-
-- `api_url`: URL of your Ollama server.
-- `model`: Ollama model used for predictions.
-- `prompt_format`: Prompt format for the model; `"infer"` picks one from the model name.
-- `max_output_tokens`: Maximum generated tokens.
-
-### OpenAI-Compatible API Predictions {#edit-predictions-open-ai-compatible-api}
-
-- Description: Settings for edit predictions from a self-hosted, OpenAI-compatible server.
-- Setting: `open_ai_compatible_api`
-- Default:
-
-```json [settings]
-{
-  "edit_predictions": {
-    "open_ai_compatible_api": {
-      "api_url": "",
-      "model": "",
-      "prompt_format": "infer",
-      "max_output_tokens": 64
-    }
-  }
-}
-```
-
-**Options**
-
-- `api_url`: Completion endpoint of your server; required.
-- `model`: Model identifier sent to the server; required.
-- `prompt_format`: Prompt format for the model; `"infer"` picks one from the model name.
-- `max_output_tokens`: Maximum generated tokens.
-
-The [Local and Self-Hosted Models](../ai/edit-prediction.md#local-and-self-hosted-models) guide lists the supported prompt formats and has complete Ollama and OpenAI-compatible examples.
-
-### Disabled Globs
-
-- Description: Disable edit predictions for files matching these glob patterns.
-- Setting: `disabled_globs`
-- Default: `["**/.env*", "**/*.pem", "**/*.key", "**/*.cert", "**/*.crt", "**/.dev.vars", "**/secrets.yml", "**/.zed/settings.json", "/**/zed/settings.json", "/**/zed/keymap.json"]`
-
-**Options**
-
-List of `string` values.
-
-Use `"..."` to add patterns without repeating Zed's defaults. In project settings, it extends the user or parent configuration value. Omit `"..."` to replace the inherited list.
-
-```json [settings]
-{
-  "edit_predictions": {
-    "disabled_globs": ["**/build/**", "..."]
-  }
-}
-```
-
-Inherited patterns are inserted at `"..."`, and duplicates keep their first occurrence.
-
-Set `[]` to clear the inherited list. Omit this setting to inherit it unchanged.
-
-Relative patterns are matched against paths relative to the worktree root. Absolute patterns are matched against absolute paths. A leading `~` is expanded to your home folder.
-
-### Prediction Debounce
-
-- Description: How long Zed waits after you stop typing before automatically requesting an edit prediction.
-- Setting: `edit_predictions.<provider>.prediction_debounce`
-- Default: `75` for GitHub Copilot, `150` for Codestral, and `0` for Zed, Mercury, Ollama, and OpenAI-compatible APIs.
-
-**Options**
-
-Non-negative integer values representing milliseconds. Set this to `0` to disable the additional delay. Configure the value under the settings object for the selected provider:
-
-```json [settings]
-{
-  "edit_predictions": {
-    "provider": "open_ai_compatible_api",
-    "open_ai_compatible_api": {
-      "prediction_debounce": 500
-    }
-  }
-}
-```
-
-See [Configuring the Prediction Debounce](../ai/edit-prediction.md#configuring-the-prediction-debounce) for more information.
-
-### Edit Prediction Button
-
-- Description: Whether to show the edit prediction button in the status bar. Hiding the button does not disable edit predictions.
-- Setting: `edit_predictions.button`
-- Default: `true`
-
-**Options**
-
-`boolean` values
-
-## Edit Predictions Disabled in
-
-- Setting: `edit_predictions_disabled_in`
-- Description: Disable edit predictions in these language scopes, such as "comment" and "string".
-- Default:
-
-```json [settings]
-{
-  "edit_predictions_disabled_in": []
-}
-```
-
-Use `"..."` to add scopes without repeating the inherited list. In project settings, it extends the user or parent configuration value. In language-specific settings, it extends the scopes inherited by that language. Omit `"..."` to replace the inherited list.
-
-```json [settings]
-{
-  "edit_predictions_disabled_in": ["comment"],
-  "languages": {
-    "Go": {
-      "edit_predictions_disabled_in": ["string", "..."]
-    }
-  }
-}
-```
-
-Inherited scopes are inserted at `"..."`, and duplicates keep their first occurrence.
-
-Set `[]` to clear the inherited list. Omit this setting to inherit it unchanged.
 
 ## Current Line Highlight
 
@@ -2265,7 +1726,7 @@ If this is true, user won't be prompted whether to save/discard dirty files when
 }
 ```
 
-When trusted, project settings are synchronized automatically, language and MCP servers are downloaded and started automatically.
+When trusted, project settings are synchronized automatically, language servers are downloaded and started automatically.
 
 ### Drag And Drop Selection
 
@@ -2294,7 +1755,6 @@ When trusted, project settings are synchronized automatically, language and MCP 
     "breadcrumbs": true,
     "quick_actions": true,
     "selections_menu": true,
-    "agent_review": true,
     "code_actions": false
   }
 }
@@ -4028,7 +3488,6 @@ The following settings can be overridden for each specific language:
 - [`preferred_line_length`](#preferred-line-length)
 - [`remove_trailing_whitespace_on_save`](#remove-trailing-whitespace-on-save)
 - [`semantic_tokens`](#semantic-tokens)
-- [`show_edit_predictions`](#show-edit-predictions)
 - [`show_whitespaces`](#show-whitespaces)
 - [`whitespace_map`](#whitespace-map)
 - [`soft_wrap`](#soft-wrap)
@@ -4076,65 +3535,6 @@ An ordered list of server IDs.
 Prefix a server ID with `!` to disable it, or use `"..."` to include the remaining eligible servers.
 Opt-in servers must be named explicitly.
 See [Choosing Language Servers](../configuring-languages.md#choosing-language-servers).
-
-## Language Models
-
-- Description: Configuration for language model providers
-- Setting: `language_models`
-- Default:
-
-```json [settings]
-{
-  "language_models": {
-    "anthropic": {
-      "api_url": "https://api.anthropic.com"
-    },
-    "anthropic_compatible": {},
-    "bedrock": {},
-    "google": {
-      "api_url": "https://generativelanguage.googleapis.com"
-    },
-    "ollama": {
-      "api_url": "http://localhost:11434"
-    },
-    "llama.cpp": {
-      "api_url": "http://localhost:8080"
-    },
-    "openai": {
-      "api_url": "https://api.openai.com/v1"
-    },
-    "openai_compatible": {},
-    "opencode": {
-      "api_url": "https://opencode.ai/zen"
-    },
-    "open_router": {
-      "api_url": "https://openrouter.ai/api/v1"
-    },
-    "lmstudio": {
-      "api_url": "http://localhost:1234/api/v0"
-    },
-    "deepseek": {
-      "api_url": "https://api.deepseek.com/v1"
-    },
-    "mistral": {
-      "api_url": "https://api.mistral.ai/v1"
-    },
-    "vercel_ai_gateway": {
-      "api_url": "https://ai-gateway.vercel.sh/v1"
-    },
-    "x_ai": {
-      "api_url": "https://api.x.ai/v1"
-    },
-    "zed.dev": {}
-  }
-}
-```
-
-**Options**
-
-Configuration for various AI model providers including API URLs and authentication settings.
-See [LLM Providers](../ai/llm-providers.md#choose-a-model-access-path) for access methods, provider configuration, and custom model catalogs.
-Edit-prediction providers are configured separately under `edit_predictions`.
 
 ## Line Indicator Format
 
@@ -4250,7 +3650,7 @@ Changes apply without restarting Zed.
 
 ## Mermaid Font Family {#mermaid-font-family}
 
-- Description: Font family for text in Mermaid diagrams rendered in the Agent Panel and Markdown preview.
+- Description: Font family for text in Mermaid diagrams rendered in the Markdown preview.
 - Setting: `mermaid_font_family`
 - Default: `null` (inherits `ui_font_family`)
 
@@ -5247,16 +4647,6 @@ Examples:
 - Searching for "function" would match "function", "Function", "FUNCTION", etc.
 - Searching for "Function" would only match "Function", not "function" or "FUNCTION"
 
-## Show Call Status Icon
-
-- Description: Whether or not to show the call status icon in the status bar.
-- Setting: `show_call_status_icon`
-- Default: `true`
-
-**Options**
-
-`boolean` values
-
 ## Completions
 
 - Description: Controls how completions are processed for this language.
@@ -5345,16 +4735,6 @@ Positive integer values
 
 - Description: Whether to display inline and alongside documentation for items in the completions menu.
 - Setting: `show_completion_documentation`
-- Default: `true`
-
-**Options**
-
-`boolean` values
-
-## Show Edit Predictions
-
-- Description: Whether to show edit predictions as you type or manually by triggering `editor::ShowEditPrediction`.
-- Setting: `show_edit_predictions`
 - Default: `true`
 
 **Options**
@@ -5506,54 +4886,6 @@ List of `integer` column numbers
 - `variables`: Custom variables for task configuration
 - `enabled`: Whether tasks are enabled
 - `prefer_lsp`: Whether to prefer LSP-provided tasks over Zed language extension ones
-
-## Telemetry
-
-- Description: Control what info is collected by Zed.
-- Setting: `telemetry`
-- Default:
-
-```json [settings]
-{
-  "telemetry": {
-    "diagnostics": true,
-    "metrics": true,
-    "anthropic_retention": false
-  }
-}
-```
-
-**Options**
-
-### Diagnostics
-
-- Description: Setting for sending debug-related data, such as crash reports.
-- Setting: `diagnostics`
-- Default: `true`
-
-**Options**
-
-`boolean` values
-
-### Metrics
-
-- Description: Setting for sending anonymized usage data, such as what languages you're using Zed with.
-- Setting: `metrics`
-- Default: `true`
-
-**Options**
-
-`boolean` values
-
-### Anthropic Retention {#telemetry-anthropic-retention}
-
-- Description: Allow requests to Anthropic models that cannot be offered with Zero Data Retention.
-- Setting: `anthropic_retention`
-- Default: `false`
-
-**Options**
-
-`boolean` values
 
 ## Terminal
 
@@ -6446,7 +5778,6 @@ Run the {#action theme_selector::Toggle} action in the command palette to see a 
     "show_branch_name": true,
     "show_worktree_name": true,
     "show_project_items": true,
-    "show_onboarding_banner": true,
     "show_user_picture": true,
     "show_user_menu": true,
     "show_sign_in": true,
@@ -6463,7 +5794,6 @@ Run the {#action theme_selector::Toggle} action in the command palette to see a 
 - `show_branch_name`: Whether to show the branch name button in the titlebar
 - `show_worktree_name`: Whether to show the worktree name button in the titlebar
 - `show_project_items`: Whether to show the project host and name in the titlebar
-- `show_onboarding_banner`: Whether to show onboarding banners in the titlebar
 - `show_user_picture`: Whether to show user picture in the titlebar
 - `show_user_menu`: Whether to show the user menu button in the titlebar (the one that displays your avatar by default and contains options like Settings, Keymap, Themes, etc.)
 - `show_sign_in`: Whether to show the sign in button in the titlebar
@@ -6564,7 +5894,6 @@ Available variables:
     "gdefault": false,
     "highlight_on_yank_duration": 200,
     "custom_digraphs": {},
-    "show_edit_predictions_in_normal_mode": false,
     "cursor_shape": {
       "normal": "block",
       "replace": "underline",
@@ -6576,7 +5905,6 @@ Available variables:
 ```
 
 `default_mode` accepts `"normal"` or `"insert"`.
-`show_edit_predictions_in_normal_mode` enables predictions in normal mode in addition to insert and replace modes.
 Each `cursor_shape` accepts `"block"`, `"bar"`, `"underline"`, or `"hollow"`; insert mode also accepts `"inherit"` to use the editor's `cursor_shape`.
 See [Changing Vim Mode Settings](../vim.md#changing-vim-mode-settings) for a more comprehensive overview.
 
@@ -7059,154 +6387,6 @@ These settings belong inside the `project_panel` object.
 - `on_paste`: Whether to automatically open files after pasting or duplicating them.
 - `on_drop`: Whether to automatically open files dropped from external sources.
 
-## Agent
-
-Visit [AI Quick Start](../ai/quick-start.md) under the AI section to learn more about AI setup.
-
-These settings belong inside the `agent` object.
-See [Agent Panel](#agent-panel) for width, flexible sizing, and Threads Sidebar settings.
-
-| Setting                                | Default                                         | Description                                                                                           |
-| -------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `enabled`                              | `true`                                          | Enable the Agent Panel, unless `disable_ai` is enabled.                                               |
-| `button`                               | `true`                                          | Show the Agent Panel button in the status bar.                                                        |
-| `dock`                                 | `"left"`                                        | Dock on the `"left"`, `"right"`, or `"bottom"`.                                                       |
-| `default_height`                       | `320`                                           | Default height in pixels when bottom-docked.                                                          |
-| `max_idle_retained_threads`            | `5`                                             | Maximum eligible idle, reloadable threads retained in memory; `0` unloads every eligible idle thread. |
-| `limit_content_width`                  | `true`                                          | Constrain and center panel content using `max_content_width`.                                         |
-| `max_content_width`                    | `850`                                           | Content-width limit in pixels when `limit_content_width` is enabled.                                  |
-| `default_model.provider`               | `"zed.dev"`                                     | Provider of the default model for new threads.                                                        |
-| `default_model.model`                  | `"claude-sonnet-4"`                             | Default model for new threads.                                                                        |
-| `default_model.enable_thinking`        | `false`                                         | Enable thinking for the default model.                                                                |
-| `model_parameters`                     | `[]`                                            | Temperature overrides with optional provider/model filters; the last matching entry wins.             |
-| `tool_permissions.default`             | `"confirm"`                                     | Fallback tool permission: `"allow"`, `"deny"`, or `"confirm"`.                                        |
-| `tool_permissions.tools`               | `{}`                                            | Per-tool permissions and input-matching rules.                                                        |
-| `default_profile`                      | `"write"`                                       | Default Zed Agent profile.                                                                            |
-| `profiles`                             | Built-in `write`, `ask`, and `minimal` profiles | Named profiles controlling models and available tools.                                                |
-| `single_file_review`                   | `false`                                         | Show edit-review controls in individual files as well as the review multibuffer.                      |
-| `auto_compact.enabled`                 | `true`                                          | Summarize earlier messages automatically at the configured context threshold.                         |
-| `auto_compact.threshold`               | `"90%"`                                         | Percentage of context capacity, positive tokens-used count, or negative tokens-remaining count.       |
-| `enable_feedback`                      | `true`                                          | Show feedback controls where supported and permitted by organization policy.                          |
-| `inline_assistant_use_streaming_tools` | `true`                                          | Use streaming tools for inline assists when supported by the selected model.                          |
-| `commit_message_include_project_rules` | `true`                                          | Include project instruction files when generating Git commit messages.                                |
-| `notify_when_agent_waiting`            | `"primary_screen"`                              | Notification display: `"primary_screen"`, `"all_screens"`, or `"never"`.                              |
-| `play_sound_when_agent_done`           | `"never"`                                       | Completion and input-required sounds: `"never"`, `"when_hidden"`, or `"always"`.                      |
-| `expand_edit_card`                     | `true`                                          | Expand new edit cards to show diffs.                                                                  |
-| `expand_terminal_card`                 | `true`                                          | Expand new terminal cards to show output.                                                             |
-| `terminal_init_command`                | `""`                                            | Command run when creating or recreating a Terminal Thread shell, or an empty string to disable.       |
-| `thinking_display`                     | `"auto"`                                        | Thinking-block presentation: `"auto"`, `"preview"`, `"always_expanded"`, or `"always_collapsed"`.     |
-| `cancel_generation_on_terminal_stop`   | `true`                                          | Cancel generation when clicking the terminal tool's Stop button.                                      |
-| `use_modifier_to_send`                 | `false`                                         | Require the platform's primary modifier with Enter to send messages.                                  |
-| `message_editor_min_lines`             | `4`                                             | Minimum message-editor height in lines.                                                               |
-| `show_turn_stats`                      | `false`                                         | Show generation time and completed-turn duration.                                                     |
-| `show_merge_conflict_indicator`        | `true`                                          | Show the status-bar merge-conflict indicator for agent-assisted resolution.                           |
-
-Several of these settings have their own documentation with complete examples: [Model Temperature](../ai/agent-settings.md#model-temperature), [Automatic Compaction](../ai/agent-settings.md#automatic-compaction), [Agent Profiles](../ai/agent-profiles.md#settings), [Tool Permissions](../ai/tool-permissions.md#configuration), [Notifications](../ai/agent-panel.md#get-notified), and [Terminal Thread Initialization](../ai/terminal-threads.md#terminal-thread-init-command).
-
-### Prevent Idle Sleep
-
-- Description: Whether to keep the system from idle-sleeping while an agent thread is running. See [Keeping the System Awake](../ai/agent-panel.md#prevent-idle-sleep).
-- Setting: `agent.prevent_idle_sleep`
-- Default: `true`
-
-**Options**
-
-`boolean` values
-
-### Subagent Model {#agent-subagent-model}
-
-- Description: The model, reasoning, and speed settings for new Zed Agent subagents. This setting does not configure external agents. See [Subagent Models](../ai/agent-settings.md#subagent-models).
-- Setting: `agent.subagent_model`
-
-## Context Servers {#context-servers}
-
-- Description: Model Context Protocol (MCP) servers available to the agent, keyed by server ID.
-- Setting: `context_servers`
-- Default: `{}`
-
-Adding a server from **Settings → AI → MCP Servers** writes an entry here.
-Local servers use `command`, `args`, and `env`; remote servers use `url` and optional `headers`:
-
-```json [settings]
-{
-  "context_servers": {
-    "local-mcp-server": {
-      "command": "some-command",
-      "args": ["arg-1", "arg-2"],
-      "env": {}
-    },
-    "remote-mcp-server": {
-      "url": "https://example.com/mcp",
-      "headers": { "Authorization": "Bearer <token>" }
-    }
-  }
-}
-```
-
-For servers installed from extensions, the configuration form Zed shows after installation stores the extension's options in the entry's `settings` object.
-Any server can be turned off with `"enabled": false`.
-The [MCP documentation](../ai/mcp.md#as-custom-servers) covers authentication and other options.
-
-## Context Server Timeout {#context-server-timeout}
-
-- Description: Default timeout for MCP requests, including tool calls, in seconds.
-- Setting: `context_server_timeout`
-- Default: `60`
-
-Stdio and HTTP servers can override this with their own `timeout`.
-Timeouts are capped at `600` seconds.
-
-## Agent Servers {#agent-servers}
-
-- Description: [External agents](../ai/external-agents.md) available in the Agent Panel, keyed by agent ID.
-- Setting: `agent_servers`
-- Default: `{}`
-
-Adding a custom agent from the **External Agents** page in Agent Settings writes an entry here.
-A custom agent runs a command that speaks the Agent Client Protocol (ACP):
-
-```json [settings]
-{
-  "agent_servers": {
-    "my-agent": {
-      "type": "custom",
-      "command": "node",
-      "args": ["~/projects/agent/index.js", "--acp"],
-      "env": {}
-    }
-  }
-}
-```
-
-Agents installed from the ACP Registry use `"type": "registry"` and accept only `env` overrides in place of `command` and `args`.
-Both types also accept:
-
-- `default_mode`: Mode that new threads start in, for agents that support modes.
-- `default_config_options`: Default values for the agent's session options, keyed by option ID.
-- `favorite_config_option_values`: Favorited values for the agent's session options, keyed by option ID.
-
-## Collaboration Panel
-
-- Description: Customizations for the collaboration panel.
-- Setting: `collaboration_panel`
-- Default:
-
-```json [settings]
-{
-  "collaboration_panel": {
-    "button": true,
-    "dock": "right",
-    "default_width": 240
-  }
-}
-```
-
-**Options**
-
-- `button`: Whether to show the collaboration panel button in the status bar
-- `dock`: Where to dock the collaboration panel. Can be `left` or `right`
-- `default_width`: Default width of the collaboration panel
-
 ## Debuggers {#debuggers}
 
 - Description: Preferred debug adapters for automatically generated debug scenarios.
@@ -7407,23 +6587,6 @@ You can define these in user or project settings; project settings are merged on
 **Options**
 
 - `expand_outlines_with_depth`: Collapse outline items with children at this depth or deeper; `0` collapses all of them.
-
-## Calls
-
-- Description: Customize behavior when participating in a call
-- Setting: `calls`
-- Default:
-
-```json [settings]
-{
-  "calls": {
-    // Join calls with the microphone live by default
-    "mute_on_join": false,
-    // Share your project when you are the first to join a channel
-    "share_on_join": false
-  }
-}
-```
 
 ## Colorize Brackets
 

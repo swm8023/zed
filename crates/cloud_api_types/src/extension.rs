@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use strum::EnumString;
 
@@ -16,6 +15,13 @@ pub struct ExtensionApiManifest {
     pub wasm_api_version: Option<String>,
     #[serde(default)]
     pub provides: BTreeSet<ExtensionProvides>,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct ExtensionMetadata {
+    pub id: Arc<str>,
+    #[serde(flatten)]
+    pub manifest: ExtensionApiManifest,
 }
 
 #[derive(
@@ -42,6 +48,7 @@ pub enum ExtensionProvides {
     Grammars,
     LanguageServers,
     DebugAdapters,
+    /// Deprecated
     ContextServers,
     /// Deprecated
     AgentServers,
@@ -57,22 +64,9 @@ impl ExtensionProvides {
         matches!(
             self,
             ExtensionProvides::AgentServers
+                | ExtensionProvides::ContextServers
                 | ExtensionProvides::SlashCommands
                 | ExtensionProvides::IndexedDocsProviders
         )
     }
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-pub struct ExtensionMetadata {
-    pub id: Arc<str>,
-    #[serde(flatten)]
-    pub manifest: ExtensionApiManifest,
-    pub published_at: DateTime<Utc>,
-    pub download_count: u64,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct GetExtensionsResponse {
-    pub data: Vec<ExtensionMetadata>,
 }

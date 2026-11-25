@@ -27,7 +27,7 @@ zed ~/projects/my-app
 
 Or use `Cmd+O` (macOS) / `Ctrl+O` (Linux/Windows) to open a folder from within Zed.
 
-By default, new projects open in your current window's threads sidebar. To open in a new window instead, use `zed -n ~/projects/my-app` or press `Cmd+Enter` when selecting from Open Recent. See [Windows & Projects](./windows-and-projects.md) for more details.
+By default, new projects open in the current window. To open in a new window instead, use `zed -n ~/projects/my-app` or press `Cmd+Enter` when selecting from Open Recent. See [Windows & Projects](./windows-and-projects.md) for more details.
 
 ### 2. Learn the Essential Commands
 
@@ -41,10 +41,6 @@ By default, new projects open in your current window's threads sidebar. To open 
 | Open settings   | `Cmd+,`       | `Ctrl+,`       |
 
 The [command palette](./command-palette.md) (`Cmd+Shift+P`) is your gateway to every action in Zed. If you forget a shortcut, search for it there.
-
-### Panel Layout
-
-Use **Panel Layout > Agentic** from the user menu in the title bar (or the {#action workspace::UseAgenticLayout} action) when you want the [Agent Panel](./ai/agent-panel.md) and Threads Sidebar next to each other on the left. Use **Panel Layout > Classic** (or {#action workspace::UseClassicLayout}) to restore the editor-oriented layout.
 
 ### 3. Configure Your Editor
 
@@ -65,12 +61,6 @@ Zed includes built-in support for many languages. For others, install the extens
 3. Click Install
 
 See [Languages](./languages.md) for language-specific setup instructions.
-
-### 5. Try AI Features
-
-Zed includes built-in AI assistance. Open the Agent Panel with `Cmd+Shift+A` (macOS) or `Ctrl+Shift+A` (Linux/Windows) to start a conversation, or use `Cmd+Enter` (macOS) / `Ctrl+Enter` (Linux/Windows) for inline assistance.
-
-See [AI Overview](./ai/overview.md) to configure providers and learn what's possible.
 
 ## Coming from Another Editor?
 

@@ -146,7 +146,6 @@ To disable this behavior use:
     "show_branch_name": true,         // Show/hide branch name
     "show_worktree_name": true,       // Show/hide worktree name
     "show_project_items": true,       // Show/hide project host and name
-    "show_onboarding_banner": true,   // Show/hide onboarding banners
     "show_user_picture": true,        // Show/hide user avatar
     "show_user_menu": true,           // Show/hide app user button
     "show_sign_in": true,             // Show/hide sign-in button
@@ -428,15 +427,6 @@ TBD: Centered layout related settings
   "colorize_brackets": true,
 ```
 
-### Edit Predictions {#editor-ai}
-
-```json [settings]
-  "edit_predictions": {
-    "mode": "eager"                  // Automatically show (eager) or hold-alt (subtle)
-  },
-  "show_edit_predictions": true     // Show/hide predictions in editor
-```
-
 ### Editor Inlay Hints
 
 ```json [settings]
@@ -524,34 +514,6 @@ TBD: Centered layout related settings
     "hide_hidden": false
   }
 ```
-
-## Agent Panel
-
-```json [settings]
-{
-  "agent": {
-    "enabled": true, // Enable/disable the agent
-    "button": true, // Show/hide the icon in the status bar
-    "dock": "right", // Where to dock: left, right, bottom
-    "flexible": true, // Use proportional sizing (left/right docked)
-    "default_width": 640, // Fixed width when flexible is false
-    "default_height": 320 // Default height (bottom docked)
-  },
-  // Controls the font family and size for agent responses in the agent panel.
-  // If not specified, they fall back to the UI font family and size.
-  "agent_ui_font_family": "Inter",
-  "agent_ui_font_size": 15,
-  // Controls the font family and size for the agent panel's message editor
-  // and user messages.
-  // If not specified, the font family falls back to the buffer font family.
-  "agent_buffer_font_family": "Berkeley Mono",
-  "agent_buffer_font_size": 12
-}
-```
-
-When `agent.flexible` is enabled, `agent.default_width` does not control the panel width. Double-clicking the panel’s outer resize handle restores the default proportion. Set `agent.flexible` to `false` to use `agent.default_width` as the reset width.
-
-See [Zed AI Documentation](./ai/overview.md) for additional non-visual AI settings.
 
 ## Terminal Panel
 

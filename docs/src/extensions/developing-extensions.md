@@ -16,7 +16,6 @@ Extensions can provide:
 - [Themes](./themes.md)
 - [Icon Themes](./icon-themes.md)
 - [Snippets](./snippets.md)
-- [MCP Servers](./mcp-extensions.md)
 
 Zed automatically assigns your extension to categories on the Extensions page based on the features it provides. An extension that provides multiple features may appear in more than one category.
 

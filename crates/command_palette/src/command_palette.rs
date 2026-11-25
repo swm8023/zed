@@ -9,7 +9,6 @@ use std::{
 };
 
 use anyhow::Context as _;
-use client::parse_zed_link;
 use command_palette_hooks::{
     CommandInterceptItem, CommandInterceptResult, CommandPaletteFilter,
     GlobalCommandPaletteInterceptor,
@@ -595,7 +594,7 @@ impl PickerDelegate for CommandPaletteDelegate {
         let (mut tx, mut rx) = postage::dispatch::channel(1);
 
         let query_str = query.as_str();
-        let is_zed_link = parse_zed_link(query_str, cx).is_some();
+        let is_zed_link = query_str.starts_with("zed://");
 
         let task = cx.background_spawn({
             let mut commands = self.all_commands.clone();
@@ -740,11 +739,6 @@ impl PickerDelegate for CommandPaletteDelegate {
 
         let action_ix = self.matches[self.selected_ix].candidate_id;
         let command = self.commands.swap_remove(action_ix);
-        telemetry::event!(
-            "Action Invoked",
-            source = "command palette",
-            action = command.name
-        );
         self.matches.clear();
         self.commands.clear();
         let command_name = command.name.clone();
