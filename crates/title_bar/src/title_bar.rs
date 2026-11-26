@@ -433,9 +433,6 @@ impl TitleBar {
         let (tooltip_title, icon) = match options {
             RemoteConnectionOptions::Ssh(_) => ("Remote Project", IconName::Server),
             RemoteConnectionOptions::Wsl(_) => ("Remote Project", IconName::Linux),
-            RemoteConnectionOptions::Docker(_dev_container_connection) => {
-                ("Dev Container", IconName::Box)
-            }
             #[cfg(any(test, feature = "test-support"))]
             RemoteConnectionOptions::Mock(_) => ("Mock Remote Project", IconName::Server),
         };

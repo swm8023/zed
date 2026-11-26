@@ -2612,31 +2612,26 @@ impl Editor {
                     editor.refresh_sticky_headers(&editor.snapshot(window, cx), cx);
                 }
                 EditorEvent::Edited { .. } => {
-                    let vim_mode = vim_mode_setting::VimModeSetting::try_get(cx)
-                        .map(|vim_mode| vim_mode.0)
+                    let display_map = editor.display_snapshot(cx);
+                    let selections = editor.selections.all_adjusted_display(&display_map);
+                    let pop_state = editor
+                        .change_list
+                        .last()
+                        .map(|previous| {
+                            previous.len() == selections.len()
+                                && previous.iter().enumerate().all(|(ix, p)| {
+                                    p.to_display_point(&display_map).row()
+                                        == selections[ix].head().row()
+                                })
+                        })
                         .unwrap_or(false);
-                    if !vim_mode {
-                        let display_map = editor.display_snapshot(cx);
-                        let selections = editor.selections.all_adjusted_display(&display_map);
-                        let pop_state = editor
-                            .change_list
-                            .last()
-                            .map(|previous| {
-                                previous.len() == selections.len()
-                                    && previous.iter().enumerate().all(|(ix, p)| {
-                                        p.to_display_point(&display_map).row()
-                                            == selections[ix].head().row()
-                                    })
-                            })
-                            .unwrap_or(false);
-                        let new_positions = selections
-                            .into_iter()
-                            .map(|s| display_map.display_point_to_anchor(s.head(), Bias::Left))
-                            .collect();
-                        editor
-                            .change_list
-                            .push_to_change_list(pop_state, new_positions);
-                    }
+                    let new_positions = selections
+                        .into_iter()
+                        .map(|s| display_map.display_point_to_anchor(s.head(), Bias::Left))
+                        .collect();
+                    editor
+                        .change_list
+                        .push_to_change_list(pop_state, new_positions);
                 }
                 _ => (),
             },
@@ -10667,10 +10662,6 @@ impl Editor {
             .and_then(|file| Path::new(file.file_name(cx)).extension())
             .and_then(|e| e.to_str())
             .map(|a| a.to_string()));
-
-        let vim_mode = vim_mode_setting::VimModeSetting::try_get(cx)
-            .map(|vim_mode| vim_mode.0)
-            .unwrap_or(false);
 
         let project = project.read(cx);
         let event_type = reported_event.event_type();

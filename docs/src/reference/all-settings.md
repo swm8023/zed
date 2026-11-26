@@ -144,8 +144,6 @@ Non-negative `float` values
 }
 ```
 
-> Note: This setting has no effect in [Vim mode](../vim.md), as rewrap is already allowed everywhere.
-
 ## Auto Indent
 
 - Description: Controls automatic indentation behavior when typing. This can be specified on a per-language basis.
@@ -568,7 +566,7 @@ For example:
 }
 ```
 
-See [Command Mnemonics](../vim.md#command-mnemonics).
+Command aliases can be entered in the command palette.
 
 ## Completion Menu {#completion-menu}
 
@@ -3031,16 +3029,6 @@ Numbers from `6` to `100` pixels, inclusive.
 
 - Description: Whether to indent lines using tab characters or multiple spaces.
 - Setting: `hard_tabs`
-- Default: `false`
-
-**Options**
-
-`boolean` values
-
-## Helix Mode
-
-- Description: Whether or not to enable Helix mode. Enabling `helix_mode` also enables `vim_mode`. See the [Helix documentation](../helix.md) for more details.
-- Setting: `helix_mode`
 - Default: `false`
 
 **Options**
@@ -5871,43 +5859,6 @@ Available variables:
 
 > Note: This setting only affects Linux. GNOME Wayland does not support server-side decorations. Changes only apply to newly created windows. Restart Zed to apply the setting to all windows.
 
-## Vim
-
-- Description: Whether or not to enable vim mode.
-- Setting: `vim_mode`
-- Default: `false`
-
-### Vim Settings {#vim-settings}
-
-- Description: Configure Vim behavior separately from the `vim_mode` switch.
-- Setting: `vim`
-- Default:
-
-```json [settings]
-{
-  "vim": {
-    "default_mode": "normal",
-    "toggle_relative_line_numbers": false,
-    "use_system_clipboard": "always",
-    "use_smartcase_find": false,
-    "use_regex_search": true,
-    "gdefault": false,
-    "highlight_on_yank_duration": 200,
-    "custom_digraphs": {},
-    "cursor_shape": {
-      "normal": "block",
-      "replace": "underline",
-      "visual": "block",
-      "insert": "inherit"
-    }
-  }
-}
-```
-
-`default_mode` accepts `"normal"` or `"insert"`.
-Each `cursor_shape` accepts `"block"`, `"bar"`, `"underline"`, or `"hollow"`; insert mode also accepts `"inherit"` to use the editor's `cursor_shape`.
-See [Changing Vim Mode Settings](../vim.md#changing-vim-mode-settings) for a more comprehensive overview.
-
 ## Which-key Menu
 
 - Description: Show matching bindings while a multi-stroke binding is pending.
@@ -6797,7 +6748,6 @@ The [Per-Release Channel Overrides](../configuring-zed.md#per-release-channel-ov
 
   "autosave": "on_focus_change",
   "format_on_save": "off",
-  "vim_mode": false,
   "terminal": {
     "font_family": "FiraCode Nerd Font Mono",
     "blinking": "off"

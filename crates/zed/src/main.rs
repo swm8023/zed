@@ -509,7 +509,7 @@ fn main() {
         debug_adapter_extension::init(extension_host_proxy.clone(), cx);
         languages::init(languages.clone(), fs.clone(), node_runtime.clone(), cx);
 
-        let workspace_store = cx.new(|cx| WorkspaceStore::new(client.clone(), cx));
+        let workspace_store = cx.new(|_| WorkspaceStore::default());
 
         language_extension::init(
             language_extension::LspAccess::ViaWorkspaces({
@@ -530,12 +530,10 @@ fn main() {
             languages.clone(),
         );
 
-        Client::set_global(client.clone(), cx);
-
         zed::init(cx);
         #[cfg(target_os = "macos")]
         zed::move_to_applications::init(cx);
-        project::Project::init(&client, cx);
+        project::Project::init(cx);
         debugger_ui::init(cx);
         debugger_tools::init(cx);
         feature_flags::FeatureFlagStore::init(cx);
@@ -578,7 +576,6 @@ fn main() {
         snippet_provider::init(cx);
         repl::init(app_state.fs.clone(), cx);
         recent_projects::init(cx);
-        dev_container::init(cx);
 
         load_embedded_fonts(cx);
         #[cfg(target_os = "linux")]
@@ -614,7 +611,6 @@ fn main() {
             },
             wrap_div_with_search_actions: search::buffer_search::register_pane_search_actions,
         });
-        vim::init(cx);
         terminal_view::init(cx);
         journal::init(app_state.clone(), cx);
         encoding_selector::init(cx);
@@ -718,7 +714,6 @@ fn main() {
                 diff_paths,
                 wsl,
                 diff_all: diff_all_mode,
-                dev_container: args.dev_container,
                 ..Default::default()
             })
         }
@@ -1027,7 +1022,6 @@ fn handle_open_request(request: OpenRequest, app_state: Arc<AppState>, cx: &mut 
     }
 
     let mut task = None;
-    let dev_container = request.dev_container;
     if !request.open_paths.is_empty() || !request.diff_paths.is_empty() {
         let app_state = app_state.clone();
         let base_open_options = zed::open_options_for_request(
@@ -1043,10 +1037,7 @@ fn handle_open_request(request: OpenRequest, app_state: Arc<AppState>, cx: &mut 
                 &request.diff_paths,
                 request.diff_all,
                 app_state,
-                workspace::OpenOptions {
-                    open_in_dev_container: dev_container,
-                    ..base_open_options
-                },
+                base_open_options,
                 cx,
             )
             .await?;
@@ -1378,13 +1369,6 @@ struct Args {
     #[cfg(target_os = "windows")]
     #[arg(long, value_name = "USER@DISTRO")]
     wsl: Option<String>,
-
-    /// Open the project in a dev container.
-    ///
-    /// Automatically triggers "Reopen in Dev Container" if a `.devcontainer/`
-    /// configuration is found in the project directory.
-    #[arg(long)]
-    dev_container: bool,
 
     /// Instructs zed to run as a dev server on this machine. (not implemented)
     #[arg(long)]

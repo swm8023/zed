@@ -231,7 +231,7 @@ cargo build --release --locked --package remote_server --bin remote-server
 
 Copy the executable to the path shown by the connection prompt under the remote user's `.zed_server` directory. A dev build uses `~/.zed_server/zed-remote-server-dev-build`. Append `.exe` for a Windows host. On Unix, make the executable runnable with `chmod +x`.
 
-Run `remote-server version --package` to check the version and channel. Zed refuses the connection when the executable is missing or its version and channel differ from the editor's. WSL and dev containers also use an executable deployed in their own environment.
+Run `remote-server version --package` to check the version and channel. Zed refuses the connection when the executable is missing or its version and channel differ from the editor's. WSL also uses a matching executable deployed in the distribution.
 
 ## Maintaining the SSH connection
 

@@ -36,14 +36,11 @@ impl SshRunningKernel {
         window: &mut Window,
         cx: &mut App,
     ) -> Task<Result<Box<dyn RunningKernel>>> {
-        let client = project.read(cx).client();
         let remote_client = project.read(cx).remote_client();
-        let project_id = project
-            .read(cx)
-            .remote_id()
-            .unwrap_or(proto::REMOTE_SERVER_PROJECT_ID);
+        let project_id = proto::REMOTE_SERVER_PROJECT_ID;
 
         window.spawn(cx, async move |cx| {
+            let remote_client = remote_client.context("no remote client")?;
             let command = kernel_spec
                 .kernelspec
                 .argv
@@ -65,14 +62,10 @@ impl SshRunningKernel {
                 command,
                 args,
             };
-            let response = if let Some(remote_client) = remote_client.as_ref() {
-                remote_client
-                    .read_with(cx, |client, _| client.proto_client())
-                    .request(request)
-                    .await?
-            } else {
-                client.request(request).await?
-            };
+            let response = remote_client
+                .read_with(cx, |client, _| client.proto_client())
+                .request(request)
+                .await?;
 
             let kernel_id = response.kernel_id.clone();
             let connection_info: serde_json::Value =
@@ -111,7 +104,6 @@ impl SshRunningKernel {
                 (local_ports[4], "127.0.0.1".to_string(), remote_hb_port),
             ];
 
-            let remote_client = remote_client.ok_or_else(|| anyhow::anyhow!("no remote client"))?;
             let command_template = cx.update(|_window, cx| {
                 remote_client.read(cx).build_forward_ports_command(forwards)
             })??;
@@ -320,7 +312,10 @@ impl RunningKernel for SshRunningKernel {
     fn force_shutdown(&mut self, _window: &mut Window, cx: &mut App) -> Task<Result<()>> {
         let kernel_id = self.kernel_id.clone();
         let project_id = self.project_id;
-        let client = self.project.read(cx).client();
+        let Some(client) = self.project.read(cx).remote_client() else {
+            return Task::ready(Err(anyhow::anyhow!("no remote client")));
+        };
+        let client = client.read(cx).proto_client();
 
         cx.background_executor().spawn(async move {
             let request = proto::KillKernel {

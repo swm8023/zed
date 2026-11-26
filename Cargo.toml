@@ -25,7 +25,6 @@ members = [
     "crates/debug_adapter_extension",
     "crates/debugger_tools",
     "crates/debugger_ui",
-    "crates/dev_container",
     "crates/diagnostics",
     "crates/docs_preprocessor",
     "crates/editor",
@@ -174,8 +173,6 @@ members = [
     "crates/ui_prompt",
     "crates/util",
     "crates/util_macros",
-    "crates/vim",
-    "crates/vim_mode_setting",
     "crates/watch",
     "crates/which_key",
     "crates/windows_resources",
@@ -246,7 +243,6 @@ debug_adapter_extension = { path = "crates/debug_adapter_extension" }
 debugger_tools = { path = "crates/debugger_tools" }
 debugger_ui = { path = "crates/debugger_ui" }
 derive_refineable = { path = "crates/refineable/derive_refineable" }
-dev_container = { path = "crates/dev_container" }
 diagnostics = { path = "crates/diagnostics" }
 editor = { path = "crates/editor" }
 encoding_selector = { path = "crates/encoding_selector" }
@@ -387,8 +383,6 @@ ui_macros = { path = "crates/ui_macros" }
 ui_prompt = { path = "crates/ui_prompt" }
 util = { path = "crates/util" }
 util_macros = { path = "crates/util_macros" }
-vim = { path = "crates/vim" }
-vim_mode_setting = { path = "crates/vim_mode_setting" }
 watch = { path = "crates/watch" }
 which_key = { path = "crates/which_key" }
 windows_resources = { path = "crates/windows_resources" }
@@ -775,8 +769,6 @@ serde_json_lenient = { version = "0.2", features = [
 ] }
 serde_path_to_error = "0.1.17"
 serde_urlencoded = "0.7"
-serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
-serde_yaml_ng = "0.10"
 sha2 = "0.10"
 shellexpand = "3.1"
 shlex = "2.0"
@@ -881,7 +873,6 @@ which = "8"
 windows-core = "0.62"
 windows-registry = "0.6.0"
 xkbcommon = { version = "0.8", default-features = false }
-yaml-rust2 = { version = "0.8", default-features = false }
 yawc = { version = "0.4", default-features = false }
 zeroize = "1.8"
 zstd = { version = "0.13", default-features = false, features = ["legacy", "arrays"] }

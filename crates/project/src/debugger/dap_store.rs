@@ -116,7 +116,7 @@ pub struct PersistedAdapterOptions {
 }
 
 impl DapStore {
-    pub fn init(client: &AnyProtoClient, cx: &mut App) {
+    pub(crate) fn register_locators(cx: &mut App) {
         static ADD_LOCATORS: Once = Once::new();
         ADD_LOCATORS.call_once(|| {
             let registry = DapRegistry::global(cx);
@@ -125,6 +125,10 @@ impl DapStore {
             registry.add_locator(Arc::new(locators::node::NodeLocator));
             registry.add_locator(Arc::new(locators::python::PythonLocator));
         });
+    }
+
+    pub fn init(client: &AnyProtoClient, cx: &mut App) {
+        Self::register_locators(cx);
         client.add_entity_request_handler(Self::handle_run_debug_locator);
         client.add_entity_request_handler(Self::handle_get_debug_adapter_binary);
         client.add_entity_message_handler(Self::handle_log_to_debug_console);

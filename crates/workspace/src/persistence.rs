@@ -29,8 +29,7 @@ use project::{
 
 use language::{LanguageName, Toolchain, ToolchainScope};
 use remote::{
-    DockerConnectionOptions, RemoteConnectionIdentity, RemoteConnectionOptions,
-    SshConnectionOptions, WslConnectionOptions,
+    RemoteConnectionIdentity, RemoteConnectionOptions, SshConnectionOptions, WslConnectionOptions,
 };
 use serde::{Deserialize, Serialize};
 use sqlez::{
@@ -1706,10 +1705,6 @@ impl WorkspaceDb {
         let mut host = None;
         let mut port = None;
         let mut distro = None;
-        let mut name = None;
-        let mut container_id = None;
-        let mut use_podman = None;
-        let mut remote_env = None;
 
         match options {
             RemoteConnectionOptions::Ssh(options) => {
@@ -1722,14 +1717,6 @@ impl WorkspaceDb {
                 kind = RemoteConnectionKind::Wsl;
                 distro = Some(options.distro_name.as_str());
                 user = options.user.as_deref().map(Cow::Borrowed);
-            }
-            RemoteConnectionOptions::Docker(options) => {
-                kind = RemoteConnectionKind::Docker;
-                container_id = Some(options.container_id.as_str());
-                user = Some(Cow::Borrowed(options.remote_user.as_str()));
-                name = Some(options.name.as_str());
-                use_podman = Some(options.use_podman);
-                remote_env = serde_json::to_string(&options.remote_env).ok();
             }
             #[cfg(any(test, feature = "test-support"))]
             RemoteConnectionOptions::Mock(options) => {
@@ -1746,10 +1733,6 @@ impl WorkspaceDb {
             port,
             user.as_deref(),
             distro,
-            name,
-            container_id,
-            use_podman,
-            remote_env.as_deref(),
         )
     }
 
@@ -1760,10 +1743,6 @@ impl WorkspaceDb {
         port: Option<u16>,
         user: Option<&str>,
         distro: Option<&str>,
-        name: Option<&str>,
-        container_id: Option<&str>,
-        use_podman: Option<bool>,
-        remote_env: Option<&str>,
     ) -> Result<RemoteConnectionId> {
         if let Some(id) = this.select_row_bound(sql!(
             SELECT id
@@ -1773,9 +1752,7 @@ impl WorkspaceDb {
                 host IS ? AND
                 port IS ? AND
                 user IS ? AND
-                distro IS ? AND
-                name IS ? AND
-                container_id IS ?
+                distro IS ?
             LIMIT 1
         ))?((
             kind.serialize(),
@@ -1783,8 +1760,6 @@ impl WorkspaceDb {
             port,
             user,
             distro,
-            name,
-            container_id,
         ))? {
             Ok(RemoteConnectionId(id))
         } else {
@@ -1794,12 +1769,8 @@ impl WorkspaceDb {
                     host,
                     port,
                     user,
-                    distro,
-                    name,
-                    container_id,
-                    use_podman,
-                    remote_env
-                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                    distro
+                ) VALUES (?1, ?2, ?3, ?4, ?5)
                 RETURNING id
             ))?((
                 kind.serialize(),
@@ -1807,10 +1778,6 @@ impl WorkspaceDb {
                 port,
                 user,
                 distro,
-                name,
-                container_id,
-                use_podman,
-                remote_env,
             ))?
             .context("failed to insert remote project")?;
             Ok(RemoteConnectionId(id))
@@ -1867,13 +1834,16 @@ impl WorkspaceDb {
             .collect())
     }
 
+    // Leave old container workspaces on disk so cleanup and recovery still work after a rollback.
     query! {
         fn recent_workspaces_query() -> Result<Vec<(WorkspaceId, String, String, Option<String>, Option<String>, Option<u64>, Option<String>, String)>> {
             SELECT workspace_id, paths, paths_order, identity_paths, identity_paths_order, remote_connection_id, session_id, timestamp
             FROM workspaces
-            WHERE
-                paths IS NOT NULL OR
-                remote_connection_id IS NOT NULL
+            WHERE (paths IS NOT NULL OR remote_connection_id IS NOT NULL)
+              AND NOT EXISTS (
+                  SELECT id FROM remote_connections
+                  WHERE id = workspaces.remote_connection_id AND kind = "docker"
+              )
             ORDER BY timestamp DESC
         }
     }
@@ -1910,6 +1880,10 @@ impl WorkspaceDb {
             SELECT workspace_id, paths, paths_order, window_id, remote_connection_id
             FROM workspaces
             WHERE session_id = ?1
+              AND NOT EXISTS (
+                  SELECT id FROM remote_connections
+                  WHERE id = workspaces.remote_connection_id AND kind = "docker"
+              )
             ORDER BY timestamp DESC
         }
     }
@@ -1932,13 +1906,13 @@ impl WorkspaceDb {
     fn remote_connections(&self) -> Result<HashMap<RemoteConnectionId, RemoteConnectionOptions>> {
         Ok(self.select(sql!(
             SELECT
-                id, kind, host, port, user, distro, container_id, name, use_podman, remote_env
+                id, kind, host, port, user, distro
             FROM
                 remote_connections
         ))?()?
         .into_iter()
         .filter_map(
-            |(id, kind, host, port, user, distro, container_id, name, use_podman, remote_env)| {
+            |(id, kind, host, port, user, distro)| {
                 Some((
                     RemoteConnectionId(id),
                     Self::remote_connection_from_row(
@@ -1947,10 +1921,6 @@ impl WorkspaceDb {
                         port,
                         user,
                         distro,
-                        container_id,
-                        name,
-                        use_podman,
-                        remote_env,
                     )?,
                 ))
             },
@@ -1962,9 +1932,9 @@ impl WorkspaceDb {
         &self,
         id: RemoteConnectionId,
     ) -> Result<RemoteConnectionOptions> {
-        let (kind, host, port, user, distro, container_id, name, use_podman, remote_env) =
+        let (kind, host, port, user, distro) =
             self.select_row_bound(sql!(
-                SELECT kind, host, port, user, distro, container_id, name, use_podman, remote_env
+                SELECT kind, host, port, user, distro
                 FROM remote_connections
                 WHERE id = ?
             ))?(id.0)?
@@ -1975,10 +1945,6 @@ impl WorkspaceDb {
             port,
             user,
             distro,
-            container_id,
-            name,
-            use_podman,
-            remote_env,
         )
         .context("invalid remote_connection row")
     }
@@ -1989,10 +1955,6 @@ impl WorkspaceDb {
         port: Option<u16>,
         user: Option<String>,
         distro: Option<String>,
-        container_id: Option<String>,
-        name: Option<String>,
-        use_podman: Option<bool>,
-        remote_env: Option<String>,
     ) -> Option<RemoteConnectionOptions> {
         match RemoteConnectionKind::deserialize(&kind)? {
             RemoteConnectionKind::Wsl => Some(RemoteConnectionOptions::Wsl(WslConnectionOptions {
@@ -2005,18 +1967,6 @@ impl WorkspaceDb {
                 username: user,
                 ..Default::default()
             })),
-            RemoteConnectionKind::Docker => {
-                let remote_env: BTreeMap<String, String> =
-                    serde_json::from_str(&remote_env?).ok()?;
-                Some(RemoteConnectionOptions::Docker(DockerConnectionOptions {
-                    container_id: container_id?,
-                    name: name?,
-                    remote_user: user?,
-                    upload_binary_over_docker_exec: false,
-                    use_podman: use_podman?,
-                    remote_env,
-                }))
-            }
         }
     }
 
@@ -4333,6 +4283,58 @@ mod tests {
             .unwrap();
 
         assert_eq!(connection_id, same_connection_id);
+    }
+
+    #[gpui::test]
+    async fn legacy_container_workspaces_do_not_block_remote_restore(cx: &mut gpui::TestAppContext) {
+        let db = WorkspaceDb::open_test_db("legacy-container-restore").await;
+        let fs = fs::FakeFs::new(cx.executor());
+        db.write(|conn| {
+            let mut insert_connection = conn
+                .exec_bound(sql!(
+                    INSERT INTO remote_connections (id, kind, host, distro) VALUES (?, ?, ?, ?)
+                ))
+                .expect("prepare remote connection insert");
+            insert_connection((1_i64, "docker", None::<&str>, None::<&str>)).unwrap();
+            insert_connection((2_i64, "ssh", Some("example.com"), None::<&str>)).unwrap();
+            insert_connection((3_i64, "wsl", None::<&str>, Some("Ubuntu"))).unwrap();
+
+            let mut insert_workspace = conn
+                .exec_bound(sql!(
+                    INSERT INTO workspaces (workspace_id, paths, paths_order, remote_connection_id, session_id)
+                    VALUES (?, ?, ?, ?, ?)
+                ))
+                .expect("prepare workspace insert");
+            for id in 1_i64..=3 {
+                insert_workspace((id, "/project", "0", id, "previous-session")).unwrap();
+            }
+        })
+        .await;
+
+        let recent = db.recent_project_workspaces(fs.as_ref()).await.unwrap();
+        assert_eq!(recent.len(), 2);
+        let restored = db
+            .last_session_workspace_locations("previous-session", None, fs.as_ref())
+            .await
+            .unwrap();
+        assert_eq!(restored.len(), 2);
+        assert!(restored.iter().any(|workspace| matches!(
+            workspace.location,
+            SerializedWorkspaceLocation::Remote(RemoteConnectionOptions::Ssh(_))
+        )));
+        assert!(restored.iter().any(|workspace| matches!(
+            workspace.location,
+            SerializedWorkspaceLocation::Remote(RemoteConnectionOptions::Wsl(_))
+        )));
+
+        db.garbage_collect_workspaces(fs.as_ref(), "current-session", None)
+            .await
+            .unwrap();
+        let legacy_workspace = db
+            .select_row_bound::<_, i64>(sql!(SELECT workspace_id FROM workspaces WHERE workspace_id = ?))
+            .unwrap()(1_i64)
+            .unwrap();
+        assert_eq!(legacy_workspace, Some(1));
     }
 
     #[gpui::test]

@@ -74,9 +74,6 @@ We have dedicated guides for switching from other editors:
 
 You can also enable familiar keybindings:
 
-- **Vim**: Enable `vim_mode` in settings. See [Vim Mode](./vim.md).
-- **Helix**: Enable `helix_mode` in settings. See [Helix Mode](./helix.md).
-
 ## Join the Community
 
 Zed is open source. Join us on GitHub or in Discord to contribute code, report bugs, or suggest features.

@@ -24,9 +24,6 @@ We currently support:
 
 This setting can also be changed via the command palette through the {#action zed::ToggleBaseKeymapSelector} action.
 
-You can also enable `vim_mode` or `helix_mode`, which add modal bindings.
-For more information, see the documentation for [Vim mode](./vim.md) and [Helix mode](./helix.md).
-
 ## Keymap Editor
 
 You can access the keymap editor through the {#kb zed::OpenKeymap} action or by running {#action zed::OpenKeymap} action from the [command palette](./command-palette.md). You can easily add or change a keybind for an action with the `Change Keybinding` or `Add Keybinding` button on the command palette's left bottom corner.
@@ -129,7 +126,7 @@ For example:
 # in an editor, it might look like this:
 Workspace os=macos keyboard_layout=com.apple.keylayout.QWERTY
   Pane
-    Editor mode=full extension=md vim_mode=insert
+    Editor mode=full extension=md
 
 # in the project panel
 Workspace os=macos
@@ -151,11 +148,9 @@ For example:
 - `"context": "!Editor && !Terminal"` - matches anywhere except where an Editor or Terminal is focused
 - `"context": "os == macos > Editor"` - matches any editor on macOS.
 
-It's worth noting that attributes are only available on the node they are defined on. This means that if you want to (for example) only enable a keybinding when the debugger is stopped in vim normal mode, you need to do `debugger_stopped > vim_mode == normal`.
+It's worth noting that attributes are only available on the node they are defined on. Use `debugger_stopped > Editor` to match an editor within a stopped debugger context.
 
 > Note: Before Zed v0.197.x, the `!` operator only looked at one node at a time, and `>` meant "parent" not "ancestor". This meant that `!Editor` would match the context `Workspace > Pane > Editor`, because (confusingly) the Pane matches `!Editor`, and that `os == macos > Editor` did not match the context `Workspace > Pane > Editor` because of the intermediate `Pane` node.
-
-If you're using Vim mode, we have information on how [vim modes influence the context](./vim.md#selecting-the-correct-context). Helix mode is built on top of Vim mode and uses the same contexts.
 
 ### Actions
 
@@ -177,7 +172,7 @@ When this happens, and both bindings are active in the current context, Zed will
 
 Zed can also wait before inserting printable text when it might begin a multi-stroke binding. For example, with a `j k` binding, typing `j` waits briefly for `k`; otherwise, `j` is inserted after the timeout.
 
-Whenever multi-stroke input is pending, an indicator with the pending keystrokes is shown in the status bar. Hovering it lists the bindings that could still match. If the input has a timeout, the indicator also shows a countdown, and hovering pauses the timeout so you can read the bindings. The timeout resumes with the same remaining duration when the pointer leaves. Without a timeout, the pending keystrokes are shown without a countdown. The indicator can be hidden with `{"status_bar": {"pending_keystrokes_indicator": false}}`. Vim and Helix modes continue to use their existing pending-key indicator instead.
+Whenever multi-stroke input is pending, an indicator with the pending keystrokes is shown in the status bar. Hovering it lists the bindings that could still match. If the input has a timeout, the indicator also shows a countdown, and hovering pauses the timeout so you can read the bindings. The timeout resumes with the same remaining duration when the pointer leaves. Without a timeout, the pending keystrokes are shown without a countdown. The indicator can be hidden with `{"status_bar": {"pending_keystrokes_indicator": false}}`.
 
 While a key sequence (chord) is pending, press {#kb which_key::ShowPendingBindings}
 to open the indicator's binding list without moving focus. The list updates as
@@ -314,12 +309,6 @@ A common request is to be able to map from a single keystroke to a sequence. You
         "workspace::SendKeystrokes",
         "ctrl-shift-right ctrl-shift-right ctrl-shift-right cmd-c ctrl-shift-left ctrl-shift-left ctrl-shift-left"
       ]
-    }
-  },
-  {
-    "context": "Editor && vim_mode == insert",
-    "bindings": {
-      "j k": ["workspace::SendKeystrokes", "escape"]
     }
   }
 ]

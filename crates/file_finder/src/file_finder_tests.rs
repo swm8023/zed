@@ -3959,7 +3959,7 @@ async fn test_remote_diff_prefix_avoids_unnecessary_metadata(
     });
     let remote = RemoteClient::connect_mock(options, cx).await;
     let project = cx.update(|cx| {
-        Project::init(&app_state.client, cx);
+        Project::init(cx);
         Project::remote(
             remote,
             app_state.client.clone(),
@@ -4144,7 +4144,7 @@ async fn test_deleted_remote_history_items_not_shown(
     let remote = RemoteClient::connect_mock(options, cx).await;
 
     let project = cx.update(|cx| {
-        Project::init(&app_state.client, cx);
+        Project::init(cx);
         Project::remote(
             remote,
             app_state.client.clone(),

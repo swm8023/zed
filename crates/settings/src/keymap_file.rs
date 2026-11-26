@@ -309,6 +309,9 @@ impl KeymapFile {
 
             if let Some(unbind) = unbind {
                 for (keystrokes, action) in unbind {
+                    if Self::contains_removed_action(&action.0) {
+                        continue;
+                    }
                     let result = Self::load_unbinding(
                         keystrokes,
                         action,
@@ -341,6 +344,9 @@ impl KeymapFile {
 
             if let Some(bindings) = bindings {
                 for (keystrokes, action) in bindings {
+                    if Self::contains_removed_action(&action.0) {
+                        continue;
+                    }
                     let result = Self::load_keybinding(
                         keystrokes,
                         action,
@@ -489,6 +495,22 @@ impl KeymapFile {
                 KEYSTROKE_PARSE_EXPECTED_MESSAGE
             )
         })
+    }
+
+    fn contains_removed_action(action: &Value) -> bool {
+        let Ok(Some((name, input))) = Self::parse_action_value(action) else {
+            return false;
+        };
+        match name.as_str() {
+            "workspace::ToggleVimMode"
+            | "workspace::ToggleHelixMode"
+            | "projects::OpenDevContainer"
+            | "projects::InitializeDevContainer" => true,
+            "action::Sequence" => input
+                .and_then(Value::as_array)
+                .is_some_and(|actions| actions.iter().any(Self::contains_removed_action)),
+            name => name.starts_with("vim::"),
+        }
     }
 
     pub fn parse_action(
@@ -1413,7 +1435,6 @@ impl<'a> KeybindUpdateTarget<'a> {
 #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum KeybindSource {
     User,
-    Vim,
     Base,
     #[default]
     Default,
@@ -1423,7 +1444,6 @@ pub enum KeybindSource {
 impl KeybindSource {
     const BASE: KeyBindingMetaIndex = KeyBindingMetaIndex(KeybindSource::Base as u32);
     const DEFAULT: KeyBindingMetaIndex = KeyBindingMetaIndex(KeybindSource::Default as u32);
-    const VIM: KeyBindingMetaIndex = KeyBindingMetaIndex(KeybindSource::Vim as u32);
     const USER: KeyBindingMetaIndex = KeyBindingMetaIndex(KeybindSource::User as u32);
 
     pub fn name(&self) -> &'static str {
@@ -1431,7 +1451,6 @@ impl KeybindSource {
             KeybindSource::User => "User",
             KeybindSource::Default => "Default",
             KeybindSource::Base => "Base",
-            KeybindSource::Vim => "Vim",
             KeybindSource::Unknown => "Unknown",
         }
     }
@@ -1441,7 +1460,6 @@ impl KeybindSource {
             KeybindSource::User => Self::USER,
             KeybindSource::Default => Self::DEFAULT,
             KeybindSource::Base => Self::BASE,
-            KeybindSource::Vim => Self::VIM,
             KeybindSource::Unknown => KeyBindingMetaIndex(*self as u32),
         }
     }
@@ -1451,7 +1469,6 @@ impl KeybindSource {
             Self::USER => KeybindSource::User,
             Self::BASE => KeybindSource::Base,
             Self::DEFAULT => KeybindSource::Default,
-            Self::VIM => KeybindSource::Vim,
             _ => KeybindSource::Unknown,
         }
     }
@@ -1609,6 +1626,31 @@ mod tests {
                   "
         };
         KeymapFile::parse(json).unwrap();
+    }
+
+    #[gpui::test]
+    fn keymap_ignores_removed_actions(cx: &mut App) {
+        let result = KeymapFile::load(
+            r#"[
+                {
+                    "unbind": { "escape": "vim::NormalBefore" },
+                    "bindings": {
+                        "f6": "workspace::ToggleVimMode",
+                        "f7": "workspace::ToggleHelixMode",
+                        "f8": ["action::Sequence", ["vim::NormalBefore", "test_keymap_file::StringAction"]],
+                        "f9": "projects::OpenDevContainer",
+                        "f10": "projects::InitializeDevContainer",
+                        "ctrl-s": "test_keymap_file::StringAction"
+                    }
+                }
+            ]"#,
+            cx,
+        );
+        let super::KeymapFileLoadResult::Success { key_bindings } = result else {
+            panic!("old bindings for removed actions should be ignored");
+        };
+        assert_eq!(key_bindings.len(), 1);
+        assert_eq!(key_bindings[0].action().name(), "test_keymap_file::StringAction");
     }
 
     #[gpui::test]
