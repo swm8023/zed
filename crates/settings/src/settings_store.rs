@@ -293,6 +293,26 @@ pub struct SettingsJsonSchemaParams<'a> {
     pub deprecation_messages: &'a HashMap<&'a str, &'a str>,
 }
 
+async fn write_settings_with_fs(
+    fs: &Arc<dyn Fs>,
+    settings_path: &Path,
+    text: String,
+) -> Result<()> {
+    if fs.is_file(settings_path).await {
+        let resolved_path = fs
+            .canonicalize(settings_path)
+            .await
+            .with_context(|| format!("Failed to canonicalize settings path {:?}", settings_path))?;
+        fs.atomic_write(resolved_path.clone(), text)
+            .await
+            .with_context(|| format!("Failed to write settings to file {:?}", resolved_path))
+    } else {
+        fs.atomic_write(settings_path.to_path_buf(), text)
+            .await
+            .with_context(|| format!("Failed to write settings to file {:?}", settings_path))
+    }
+}
+
 impl SettingsStore {
     pub fn new(cx: &mut App, default_settings: &str) -> Self {
         Self::new_with_semantic_tokens(cx, default_settings)
@@ -359,6 +379,7 @@ impl SettingsStore {
         cx.update_global(f)
     }
 
+    #[cfg(not(target_family = "wasm"))]
     pub fn watch_settings_files(
         &mut self,
         fs: Arc<dyn Fs>,
@@ -575,31 +596,24 @@ impl SettingsStore {
             .unbounded_send(Box::new(move |cx: AsyncApp| {
                 async move {
                     let res = async move {
+                        #[cfg(target_family = "wasm")]
+                        let old_text = match cx.read_global(|store: &SettingsStore, _| {
+                            store.last_user_settings_content.clone()
+                        }) {
+                            Some(text) => text,
+                            None => Self::load_settings(&fs).await?,
+                        };
+                        #[cfg(not(target_family = "wasm"))]
                         let old_text = Self::load_settings(&fs).await?;
                         let new_text = update(old_text, cx.clone())?;
 
-                        let settings_path = paths::settings_file().as_path();
-                        if fs.is_file(settings_path).await {
-                            let resolved_path =
-                                fs.canonicalize(settings_path).await.with_context(|| {
-                                    format!(
-                                        "Failed to canonicalize settings path {:?}",
-                                        settings_path
-                                    )
-                                })?;
-
-                            fs.atomic_write(resolved_path.clone(), new_text.clone())
-                                .await
-                                .with_context(|| {
-                                    format!("Failed to write settings to file {:?}", resolved_path)
-                                })?;
-                        } else {
-                            fs.atomic_write(settings_path.to_path_buf(), new_text.clone())
-                                .await
-                                .with_context(|| {
-                                    format!("Failed to write settings to file {:?}", settings_path)
-                                })?;
-                        }
+                        #[cfg(not(target_family = "wasm"))]
+                        write_settings_with_fs(
+                            &fs,
+                            paths::settings_file().as_path(),
+                            new_text.clone(),
+                        )
+                        .await?;
 
                         cx.update_global(|store: &mut SettingsStore, cx| {
                             store.set_user_settings(&new_text, cx).result().map(|_| ())
@@ -811,20 +825,27 @@ impl SettingsStore {
         let (settings, parse_status) = if user_settings_content.is_empty() {
             SettingsContentType::parse_json("{}")
         } else {
-            let migration_res = migrator::migrate_settings(user_settings_content);
-            migration_status = match &migration_res {
-                Ok(Some(_)) => MigrationStatus::Succeeded,
-                Ok(None) => MigrationStatus::NotNeeded,
-                Err(err) => MigrationStatus::Failed {
-                    error: err.to_string(),
-                },
-            };
-            let content = match &migration_res {
-                Ok(Some(content)) => content,
-                Ok(None) => user_settings_content,
-                Err(_) => user_settings_content,
-            };
-            SettingsContentType::parse_json(content)
+            #[cfg(not(target_family = "wasm"))]
+            {
+                let migration_res = migrator::migrate_settings(user_settings_content);
+                migration_status = match &migration_res {
+                    Ok(Some(_)) => MigrationStatus::Succeeded,
+                    Ok(None) => MigrationStatus::NotNeeded,
+                    Err(err) => MigrationStatus::Failed {
+                        error: err.to_string(),
+                    },
+                };
+                let content = match &migration_res {
+                    Ok(Some(content)) => content,
+                    Ok(None) => user_settings_content,
+                    Err(_) => user_settings_content,
+                };
+                SettingsContentType::parse_json(content)
+            }
+            #[cfg(target_family = "wasm")]
+            {
+                SettingsContentType::parse_json(user_settings_content)
+            }
         };
 
         let result = SettingsParseResult {
@@ -907,8 +928,14 @@ impl SettingsStore {
         let mut new_content = old_content.clone();
         update(&mut new_content.content);
 
-        let old_value = serde_json::to_value(&old_content).unwrap();
-        let new_value = serde_json::to_value(new_content).unwrap();
+        let old_value = serde_json::from_str(
+            &serde_json::to_string(&old_content).context("failed to serialize old settings")?,
+        )
+        .context("failed to convert old settings to JSON")?;
+        let new_value = serde_json::from_str(
+            &serde_json::to_string(&new_content).context("failed to serialize updated settings")?,
+        )
+        .context("failed to convert updated settings to JSON")?;
 
         let mut key_path = Vec::new();
         let mut edits = Vec::new();
@@ -1818,7 +1845,9 @@ mod tests {
 
         assert_eq!(
             store.get::<CursorBlinkSetting>(None),
-            &CursorBlinkSetting { cursor_blink: false },
+            &CursorBlinkSetting {
+                cursor_blink: false
+            },
             "dev override from default settings should apply",
         );
     }
@@ -1853,7 +1882,9 @@ mod tests {
 
         assert_eq!(
             store.get::<CursorBlinkSetting>(None),
-            &CursorBlinkSetting { cursor_blink: false }
+            &CursorBlinkSetting {
+                cursor_blink: false
+            }
         );
         assert_eq!(
             store.get::<ItemSettings>(None).close_position,
@@ -1924,7 +1955,9 @@ mod tests {
                 worktree_id: WorktreeId::from_usize(1),
                 path: rel_path("root2/something")
             })),
-            &CursorBlinkSetting { cursor_blink: false }
+            &CursorBlinkSetting {
+                cursor_blink: false
+            }
         );
     }
 
@@ -1938,7 +1971,9 @@ mod tests {
 
         assert_eq!(
             store.get::<CursorBlinkSetting>(None),
-            &CursorBlinkSetting { cursor_blink: false }
+            &CursorBlinkSetting {
+                cursor_blink: false
+            }
         );
     }
 

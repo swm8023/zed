@@ -24,9 +24,13 @@ use rpc::{
 };
 
 use settings::Settings;
-use std::{io, sync::Arc, time::Instant};
+#[cfg(not(target_family = "wasm"))]
+use std::time::Instant;
+use std::{io, sync::Arc};
 use text::{BufferId, ReplicaId};
-use util::{ResultExt as _, debug_panic, maybe, rel_path::RelPath};
+use util::{ResultExt as _, TryFutureExt, debug_panic, maybe, rel_path::RelPath};
+#[cfg(target_family = "wasm")]
+use web_time::Instant;
 use worktree::{File, PathChange, ProjectEntryId, Worktree, WorktreeId, WorktreeSettings};
 
 /// A set of open buffers.
@@ -838,8 +842,11 @@ impl BufferStore {
         client.add_entity_message_handler(Self::handle_buffer_reloaded);
         client.add_entity_message_handler(Self::handle_buffer_saved);
         client.add_entity_message_handler(Self::handle_update_buffer_file);
-        client.add_entity_request_handler(Self::handle_save_buffer);
-        client.add_entity_request_handler(Self::handle_reload_buffers);
+        #[cfg(not(target_family = "wasm"))]
+        {
+            client.add_entity_request_handler(Self::handle_save_buffer);
+            client.add_entity_request_handler(Self::handle_reload_buffers);
+        }
     }
 
     /// Creates a buffer store, optionally retaining its buffers.

@@ -5,11 +5,20 @@ use language_core::{LanguageConfig, LanguageQueries, QueryFile, QueryFileContent
 
 // Dev builds read the checkout's query files at runtime instead of embedding
 // them; see the `assets` crate for the rationale.
+#[cfg(not(target_family = "wasm"))]
 util::fs_embed! {
     struct GrammarDir,
     crate_relative = "src/",
     root_relative = "crates/grammars/src",
     exclude = ["*.rs"],
+}
+
+#[cfg(target_family = "wasm")]
+util::fs_embed! {
+    struct GrammarDir,
+    crate_relative = "src/",
+    root_relative = "crates/grammars/src",
+    include = ["gitcommit/*", "go/*", "regex/*", "rust/*", "tsx/*"],
 }
 
 /// Register all built-in native tree-sitter grammars with the provided registration function.

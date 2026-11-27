@@ -120,6 +120,7 @@ members = [
     "crates/project_bookmarks",
     "crates/proto",
     "crates/proxy_handshake",
+    "crates/quick_action_bar",
     "crates/recent_projects",
     "crates/refineable",
     "crates/refineable/derive_refineable",
@@ -143,6 +144,7 @@ members = [
     "crates/settings_profile_selector",
     "crates/settings_ui",
     "crates/shell_command_parser",
+    "crates/smol_wasm",
     "crates/snippet",
     "crates/snippet_provider",
     "crates/snippets_ui",
@@ -176,10 +178,12 @@ members = [
     "crates/watch",
     "crates/which_key",
     "crates/windows_resources",
+    "crates/wasm_rpc",
     "crates/workspace",
     "crates/worktree",
     "crates/worktree_benchmarks",
     "crates/zed",
+    "crates/zed_web_workspace",
     "crates/zed_actions",
     "crates/zed_credentials_provider",
     "crates/zed_env_vars",
@@ -332,6 +336,7 @@ project_symbols = { path = "crates/project_symbols" }
 project_bookmarks = { path = "crates/project_bookmarks" }
 proto = { path = "crates/proto" }
 proxy_handshake = { path = "crates/proxy_handshake" }
+quick_action_bar = { path = "crates/quick_action_bar" }
 recent_projects = { path = "crates/recent_projects" }
 refineable = { path = "crates/refineable" }
 release_channel = { path = "crates/release_channel" }
@@ -750,7 +755,7 @@ rsa = { version = "0.9", default-features = false, features = ["std", "u64_digit
 jupyter-zmq-client = { version = "3.0.0", default-features = false, features = [
     "async-dispatcher-runtime", "aws-lc-rs"
 ] }
-rust-embed = { version = "8.11", features = ["include-exclude", "compression"] }
+rust-embed = { version = "8.11", features = ["include-exclude"] }
 rustc-hash = "2.1.0"
 rustix = { version = "1.1", features = ["fs"] }
 rustls = "0.23.26"
@@ -862,6 +867,7 @@ wasmtime = { version = "48.0.7", default-features = false, features = [
 ] }
 wasm-bindgen = "0.2.120"
 wasm-bindgen-futures = "0.4"
+wasm_rpc = { path = "crates/wasm_rpc" }
 wasmtime-wasi = { version = "48.0.7", default-features = false, features = ["p2"] }
 wax = { version = "0.7", default-features = false }
 web-sys = "0.3"
@@ -898,6 +904,9 @@ features = [
 ]
 
 [patch.crates-io]
+# Browser builds keep the smol API and file-URL conversions without native I/O.
+smol = { path = "crates/smol_wasm" }
+url = { path = "crates/url_wasm" }
 cpal = { git = "https://github.com/RustAudio/cpal", rev = "e1612d5d98152f8dc2a62e1b51ef7cbf4f7f26b7" }
 # Unify `tree_sitter_language::LanguageFn` between crates.io grammar crates and
 # the git tree-sitter above; two instances of the crate would make grammar

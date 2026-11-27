@@ -1,9 +1,6 @@
 mod decorated_icon;
 mod icon_decoration;
 
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-
 pub use decorated_icon::*;
 use gpui::{
     AnimationElement, AnyElement, Hsla, ImgResourceLoader, IntoElement, Rems, Resource,
@@ -139,7 +136,7 @@ enum IconSource {
     /// Currently our SVG renderer is missing support for rendering polychrome SVGs.
     ///
     /// In order to support icon themes, we render the icons as images instead.
-    External(Arc<Path>),
+    External(Resource),
     /// An SVG not embedded in the Zed binary.
     ExternalSvg(SharedString),
 }
@@ -172,7 +169,15 @@ impl Icon {
         let source = if path.starts_with("icons/") {
             IconSource::Embedded(path)
         } else {
-            IconSource::External(Arc::from(PathBuf::from(path.as_ref())))
+            #[cfg(target_family = "wasm")]
+            let resource = if path.starts_with("/global-icons/") {
+                Resource::Uri(path.into())
+            } else {
+                Resource::Embedded(path)
+            };
+            #[cfg(not(target_family = "wasm"))]
+            let resource = Resource::from(std::path::PathBuf::from(path.as_ref()));
+            IconSource::External(resource)
         };
         Self {
             source,
@@ -194,8 +199,8 @@ impl Icon {
     }
 
     pub fn preload(&self, cx: &mut App) {
-        if let IconSource::External(path) = &self.source {
-            drop(cx.fetch_asset::<ImgResourceLoader>(&Resource::Path(path.clone())));
+        if let IconSource::External(resource) = &self.source {
+            drop(cx.fetch_asset::<ImgResourceLoader>(resource));
         }
     }
 
@@ -240,8 +245,8 @@ impl RenderOnce for Icon {
         let svg = match self.source {
             IconSource::Embedded(path) => svg().path(path),
             IconSource::ExternalSvg(path) => svg().external_path(path),
-            IconSource::External(path) => {
-                return img(path)
+            IconSource::External(resource) => {
+                return img(gpui::ImageSource::Resource(resource))
                     .size(self.size)
                     .flex_none()
                     .text_color(color)

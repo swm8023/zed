@@ -45,9 +45,10 @@ use std::{
     ops::Range,
     rc::Rc,
     sync::{Arc, OnceLock},
-    time::{Duration, Instant},
+    time::Duration,
 };
 use task::ResolvedTask;
+use web_time::Instant;
 use zed_actions::{
     buffer_search,
     search::{SelectNextMatch, SelectPreviousMatch, ToggleCaseSensitive},

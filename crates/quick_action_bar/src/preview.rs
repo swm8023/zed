@@ -14,7 +14,7 @@ enum PreviewTarget {
 }
 
 impl QuickActionBar {
-    pub fn render_preview_button(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(super) fn render_preview_button(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         // Resolve against this toolbar's own pane item rather than the
         // workspace's focused item, so each pane's button reflects and
         // targets the content of the pane it belongs to.

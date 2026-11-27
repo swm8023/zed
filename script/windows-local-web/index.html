@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zed</title>
+<style>
+html, body { margin: 0; height: 100%; background: #282c33; color: #e1e4eb; }
+#startup { position: fixed; z-index: 1; inset: 0; display: grid; place-items: center; background: #282c33; padding: 2rem; font: 16px system-ui, sans-serif; }
+#startup[hidden], #save-error[hidden] { display: none; }
+#save-error { position: fixed; z-index: 2; right: 1rem; bottom: 1rem; max-width: 24rem; padding: 0.8rem 1rem; border: 1px solid #987e61; border-radius: 6px; background: #35323a; font: 14px system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<div id="startup" role="status">Connecting to the workspace…</div>
+<div id="save-error" role="alert" hidden>The server is disconnected. Your unsaved changes are still in the editor.</div>
+<script type="module">
+const status = document.querySelector("#startup");
+const binaryProfileType = "application/vnd.zed.web-profile";
+
+async function loadProfile() {
+    const response = await fetch("/global-config", { headers: { Accept: binaryProfileType } });
+    if (!response.ok) throw new Error(await response.text());
+    if (response.headers.get("Content-Type") !== binaryProfileType) return response.text();
+
+    const content = new Uint8Array(await response.arrayBuffer());
+    const header = new DataView(content.buffer);
+    if (content.length < 9 || header.getUint32(0) !== 0x5a434647 || content[4] !== 1) {
+        throw new Error("Could not read the global Zed configuration header.");
+    }
+    let offset = 9 + header.getUint32(5, true);
+    if (offset > content.length) throw new Error("The global Zed configuration is incomplete.");
+    const profile = JSON.parse(new TextDecoder().decode(content.subarray(9, offset)));
+    for (const [path, length] of Object.entries(profile.assets)) {
+        if (!Number.isInteger(length) || length < 0 || length > content.length - offset) {
+            throw new Error("The global Zed configuration contains an invalid asset.");
+        }
+        const asset = content.subarray(offset, offset + length);
+        if (typeof asset.toBase64 === "function") {
+            profile.assets[path] = asset.toBase64();
+        } else {
+            let characters = "";
+            for (let start = 0; start < asset.length; start += 16384) {
+                characters += String.fromCharCode(...asset.subarray(start, start + 16384));
+            }
+            profile.assets[path] = btoa(characters);
+        }
+        offset += length;
+    }
+    if (offset !== content.length) throw new Error("The global Zed configuration has extra data.");
+    return JSON.stringify(profile);
+}
+
+try {
+    const response = await fetch("/bootstrap");
+    if (response.status === 401) {
+        location.reload();
+    } else {
+        if (!response.ok) throw new Error("Could not load the workspace configuration.");
+        const { workspace, architecture } = await response.json();
+        const [startWorkspace, profile] = await Promise.all([
+            import("/web/zed_web_workspace.js").then(async ({ default: init, start_workspace }) => {
+                await init();
+                return start_workspace;
+            }),
+            loadProfile(),
+        ]);
+        await startWorkspace(workspace, architecture, profile);
+        status.hidden = true;
+    }
+} catch (error) {
+    status.setAttribute("role", "alert");
+    status.textContent = String(error);
+    console.error(error);
+}
+</script>
+</body>
+</html>

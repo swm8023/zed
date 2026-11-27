@@ -794,9 +794,14 @@ impl WorktreeStore {
                         self.create_remote_worktree(upstream_client.clone(), abs_path, visible, cx)
                     }
                 }
+                #[cfg(not(target_family = "wasm"))]
                 WorktreeStoreState::Local { fs } => {
                     self.create_local_worktree(fs.clone(), abs_path.clone(), visible, cx)
                 }
+                #[cfg(target_family = "wasm")]
+                WorktreeStoreState::Local { .. } => Task::ready(Err(Arc::new(anyhow!(
+                    "Opening a folder in the browser requires a remote server connection"
+                )))),
             };
 
             let loading_task = cx.spawn({
@@ -922,6 +927,7 @@ impl WorktreeStore {
         })
     }
 
+    #[cfg(not(target_family = "wasm"))]
     fn create_local_worktree(
         &mut self,
         fs: Arc<dyn Fs>,

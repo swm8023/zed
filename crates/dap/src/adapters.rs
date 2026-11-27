@@ -1,5 +1,6 @@
 use anyhow::{Context as _, Result, anyhow};
 use async_compression::futures::bufread::GzipDecoder;
+#[cfg(not(target_family = "wasm"))]
 use async_tar::Archive;
 use async_trait::async_trait;
 use collections::HashMap;
@@ -312,10 +313,15 @@ pub async fn download_adapter_from_github(
 
     delegate.output_to_console("Download complete".to_owned());
     match file_type {
+        #[cfg(not(target_family = "wasm"))]
         DownloadedFileType::GzipTar => {
             let decompressed_bytes = GzipDecoder::new(BufReader::new(response.body_mut()));
             let archive = Archive::new(decompressed_bytes);
             archive.unpack(&version_path).await?;
+        }
+        #[cfg(target_family = "wasm")]
+        DownloadedFileType::GzipTar => {
+            anyhow::bail!("Archive extraction requires the native filesystem")
         }
         DownloadedFileType::Zip | DownloadedFileType::Vsix => {
             let zip_path = version_path.with_extension("zip");

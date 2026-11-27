@@ -373,6 +373,7 @@ impl Search {
                     let num_cpus = _executor.num_cpus();
 
                     assert!(num_cpus > 0);
+                    #[cfg(not(target_family = "wasm"))]
                     _executor
                         .scoped(|scope| {
                             let worker_count = (num_cpus - 1).max(1);
@@ -390,6 +391,19 @@ impl Search {
                             drop(candidate_searcher);
                         })
                         .await;
+
+                    #[cfg(target_family = "wasm")]
+                    {
+                        let worker = Worker {
+                            query,
+                            open_buffers,
+                            candidates: candidate_searcher.clone(),
+                            find_all_matches_rx: find_all_matches_rx.clone(),
+                        };
+                        drop(find_all_matches_rx);
+                        drop(candidate_searcher);
+                        worker.run().await;
+                    }
                 });
 
                 let (sorted_matches_tx, sorted_matches_rx) = unbounded();
@@ -1122,7 +1136,7 @@ impl<T: 'static + Send> AdaptiveBatcher<T> {
             let mut items_produced_so_far = 0_u64;
 
             let mut _schedule_flush_after_delay: Option<Task<()>> = None;
-            let _time_elapsed_since_start_of_search = std::time::Instant::now();
+            let _time_elapsed_since_start_of_search = web_time::Instant::now();
             let mut flush = pin!(flush_batch_rx);
             let mut terminating = false;
             loop {

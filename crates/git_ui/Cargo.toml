@@ -52,7 +52,6 @@ smallvec.workspace = true
 strum.workspace = true
 sysinfo.workspace = true
 task.workspace = true
-terminal.workspace = true
 theme.workspace = true
 theme_settings.workspace = true
 time.workspace = true
@@ -68,7 +67,13 @@ git_ui_core.workspace = true
 zed_actions.workspace = true
 ztracing.workspace = true
 
+web-time.workspace = true
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+time = { workspace = true, features = ["wasm-bindgen"] }
+
 [dev-dependencies]
+terminal.workspace = true
 ctor.workspace = true
 db = { workspace = true, features = ["test-support"] }
 editor = { workspace = true, features = ["test-support"] }

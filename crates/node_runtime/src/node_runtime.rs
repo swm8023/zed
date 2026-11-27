@@ -1,5 +1,6 @@
 use anyhow::{Context as _, Result, anyhow, bail};
 use async_compression::futures::bufread::GzipDecoder;
+#[cfg(not(target_family = "wasm"))]
 use async_tar::Archive;
 use chrono::{DateTime, Utc};
 use futures::{AsyncReadExt, FutureExt as _, channel::oneshot, future::Shared};
@@ -710,10 +711,15 @@ impl ManagedNodeRuntime {
 
             let body = response.body_mut();
             match archive_type {
+                #[cfg(not(target_family = "wasm"))]
                 ArchiveType::TarGz => {
                     let decompressed_bytes = GzipDecoder::new(BufReader::new(response.body_mut()));
                     let archive = Archive::new(decompressed_bytes);
                     archive.unpack(&node_containing_dir).await?;
+                }
+                #[cfg(target_family = "wasm")]
+                ArchiveType::TarGz => {
+                    anyhow::bail!("Archive extraction requires the native filesystem")
                 }
                 ArchiveType::Zip => extract_zip(&node_containing_dir, body).await?,
             }

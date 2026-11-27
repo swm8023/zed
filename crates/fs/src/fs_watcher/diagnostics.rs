@@ -6,8 +6,9 @@ use std::{
     collections::VecDeque,
     path::PathBuf,
     sync::{Arc, Weak},
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
+use web_time::Instant;
 
 const EVENT_CAPACITY: usize = 10_000;
 const RESCAN_PATH_HISTORY_CAPACITY: usize = 10;

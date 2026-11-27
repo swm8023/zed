@@ -50,6 +50,8 @@ fs.workspace = true
 log.workspace = true
 svg_preview.workspace = true
 
+web-time.workspace = true
+
 [dev-dependencies]
 client = { workspace = true, features = ["test-support"] }
 criterion.workspace = true

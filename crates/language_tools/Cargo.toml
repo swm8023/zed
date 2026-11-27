@@ -30,12 +30,15 @@ proto.workspace = true
 serde_json.workspace = true
 settings.workspace = true
 theme.workspace = true
-tree-sitter = { workspace = true, features = ["wasm"] }
+tree-sitter.workspace = true
 sysinfo.workspace = true
 ui.workspace = true
 util.workspace = true
 workspace.workspace = true
 zed_actions.workspace = true
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+tree-sitter = { workspace = true, features = ["wasm"] }
 
 [dev-dependencies]
 editor = { workspace = true, features = ["test-support"] }

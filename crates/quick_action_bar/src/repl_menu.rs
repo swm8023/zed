@@ -32,7 +32,7 @@ struct ReplMenuState {
 }
 
 impl QuickActionBar {
-    pub fn render_repl_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(super) fn render_repl_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         if !JupyterSettings::enabled(cx) {
             return None;
         }

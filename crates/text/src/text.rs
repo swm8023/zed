@@ -35,12 +35,13 @@ use std::{
     ops::{self, Deref, Range, Sub},
     str,
     sync::{Arc, LazyLock},
-    time::{Duration, Instant},
+    time::Duration,
 };
 pub use subscription::*;
 pub use sum_tree::Bias;
 use sum_tree::{Dimensions, FilterCursor, SumTree, Summary, TreeMap, TreeSet};
 use undo_map::UndoMap;
+use web_time::Instant;
 
 #[cfg(any(test, feature = "test-support"))]
 use util::RandomCharIter;

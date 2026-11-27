@@ -717,6 +717,23 @@ impl PickerDelegate for OpenPathDelegate {
         )
     }
 
+    #[cfg(target_family = "wasm")]
+    fn confirm_update_query(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Picker<Self>>,
+    ) -> Option<String> {
+        if self.lister.is_local(cx) || !matches!(self.directory_state, DirectoryState::List { .. })
+        {
+            return None;
+        }
+        let candidate = self.get_entry(self.selected_index)?;
+        if candidate.path.string == self.current_dir() {
+            return None;
+        }
+        self.select_child(window, cx)
+    }
+
     fn confirm(&mut self, secondary: bool, window: &mut Window, cx: &mut Context<Picker<Self>>) {
         let Some(candidate) = self.get_entry(self.selected_index) else {
             return;

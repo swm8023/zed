@@ -3,15 +3,31 @@ extern crate self as util;
 
 #[cfg(not(target_family = "wasm"))]
 pub mod archive;
-#[cfg(not(target_family = "wasm"))]
+#[cfg(target_family = "wasm")]
+pub mod archive {
+    use futures::io::{AsyncRead, AsyncSeek};
+    use std::path::Path;
+
+    pub async fn extract_zip<R: AsyncRead + Unpin>(
+        _destination: &Path,
+        _reader: R,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("Archive extraction requires the native filesystem")
+    }
+
+    pub async fn extract_seekable_zip<R: AsyncRead + AsyncSeek + Unpin>(
+        _destination: &Path,
+        _reader: R,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("Archive extraction requires the native filesystem")
+    }
+}
+pub mod ansi;
 pub mod command;
-#[cfg(not(target_family = "wasm"))]
 pub mod fs;
 #[cfg(not(target_family = "wasm"))]
 pub mod process;
-#[cfg(not(target_family = "wasm"))]
 pub mod shell;
-#[cfg(not(target_family = "wasm"))]
 pub mod shell_builder;
 #[cfg(not(target_family = "wasm"))]
 pub mod shell_env;
@@ -705,7 +721,9 @@ pub fn dev_repo_root() -> Option<&'static std::path::Path> {
 /// detail). Hidden from the public API.
 #[doc(hidden)]
 pub mod __rust_embed {
-    pub use rust_embed::{EmbeddedFile, Filenames, Metadata, RustEmbed, flate, utils};
+    #[cfg(not(target_family = "wasm"))]
+    pub use rust_embed::flate;
+    pub use rust_embed::{EmbeddedFile, Filenames, Metadata, RustEmbed, utils};
 }
 
 /// Backs the dev arm of [`fs_embed!`]'s `iter`: every file under the root-relative

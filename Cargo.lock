@@ -2731,6 +2731,7 @@ name = "db"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "futures",
  "gpui",
  "indoc",
  "inventory",
@@ -3306,6 +3307,7 @@ dependencies = [
  "urlencoding",
  "util",
  "uuid",
+ "web-time",
  "workspace",
  "zed_actions",
  "zlog",
@@ -4226,6 +4228,7 @@ dependencies = [
  "log",
  "notify",
  "parking_lot",
+ "path",
  "paths",
  "proto",
  "rope",
@@ -4240,6 +4243,7 @@ dependencies = [
  "trash",
  "unicode-normalization",
  "util",
+ "web-time",
  "windows 0.62.2",
 ]
 
@@ -4682,6 +4686,7 @@ dependencies = [
  "unindent",
  "util",
  "watch",
+ "web-time",
  "workspace",
  "zed_actions",
  "zlog",
@@ -4717,7 +4722,6 @@ dependencies = [
  "serde_json",
  "settings",
  "task",
- "terminal",
  "theme",
  "theme_settings",
  "ui",
@@ -6734,6 +6738,7 @@ dependencies = [
  "unindent",
  "util",
  "watch",
+ "web-time",
  "zlog",
  "ztracing",
 ]
@@ -7276,6 +7281,7 @@ dependencies = [
  "serde",
  "serde_json",
  "util",
+ "web-time",
  "zlog",
 ]
 
@@ -7935,6 +7941,7 @@ dependencies = [
  "tree-sitter",
  "unicode-segmentation",
  "util",
+ "web-time",
  "zlog",
  "ztracing",
 ]
@@ -8036,6 +8043,7 @@ name = "net"
 version = "0.1.0"
 dependencies = [
  "async-io",
+ "futures",
  "smol",
  "tempfile",
  "windows 0.62.2",
@@ -10344,6 +10352,7 @@ dependencies = [
  "util",
  "watch",
  "wax",
+ "web-time",
  "which",
  "worktree",
  "zed_credentials_provider",
@@ -10435,6 +10444,7 @@ dependencies = [
  "theme_settings",
  "ui",
  "util",
+ "web-time",
  "workspace",
  "worktree",
  "zed_actions",
@@ -10579,6 +10589,7 @@ dependencies = [
  "prost-build",
  "protox",
  "serde",
+ "web-time",
 ]
 
 [[package]]
@@ -10760,6 +10771,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "quick_action_bar"
+version = "0.1.0"
+dependencies = [
+ "editor",
+ "git",
+ "gpui",
+ "markdown_preview",
+ "picker",
+ "project",
+ "repl",
+ "search",
+ "settings",
+ "svg_preview",
+ "tabular_data_preview",
+ "ui",
+ "util",
+ "workspace",
+ "zed_actions",
 ]
 
 [[package]]
@@ -11241,6 +11273,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.17",
  "util",
+ "web-time",
  "which",
 ]
 
@@ -11536,6 +11569,7 @@ dependencies = [
  "base64",
  "collections",
  "futures",
+ "getrandom 0.3.4",
  "gpui",
  "gpui_util",
  "parking_lot",
@@ -11547,6 +11581,9 @@ dependencies = [
  "sha2",
  "strum",
  "tracing",
+ "tungstenite",
+ "util",
+ "web-time",
  "zlog",
  "zstd",
 ]
@@ -12599,9 +12636,8 @@ dependencies = [
 [[package]]
 name = "smol"
 version = "2.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a33bd3e260892199c3ccfc487c88b2da2265080acb316cd920da72fdfd7c599f"
 dependencies = [
+ "anyhow",
  "async-channel 2.5.0",
  "async-executor",
  "async-fs",
@@ -12609,8 +12645,16 @@ dependencies = [
  "async-lock",
  "async-net",
  "async-process",
+ "base64",
  "blocking",
+ "flate2",
+ "futures",
  "futures-lite 2.6.1",
+ "serde",
+ "serde_json",
+ "uuid",
+ "wasm-bindgen-futures",
+ "wasm_rpc",
 ]
 
 [[package]]
@@ -12760,6 +12804,7 @@ name = "sqlez"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "collections",
  "futures",
  "indoc",
@@ -12768,9 +12813,14 @@ dependencies = [
  "parking_lot",
  "path",
  "pollster 0.4.0",
+ "serde",
+ "serde_json",
  "sqlformat",
  "thread_local",
  "uuid",
+ "wasm-bindgen",
+ "wasm_rpc",
+ "web-sys",
 ]
 
 [[package]]
@@ -13558,6 +13608,7 @@ dependencies = [
  "smallvec",
  "sum_tree",
  "util",
+ "web-time",
  "zlog",
 ]
 
@@ -13726,6 +13777,7 @@ checksum = "743bd48c283afc0388f9b8827b976905fb217ad9e647fae3a379a9283c4def2c"
 dependencies = [
  "deranged",
  "itoa",
+ "js-sys",
  "libc",
  "num-conv",
  "num_threads",
@@ -14705,8 +14757,6 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 [[package]]
 name = "url"
 version = "2.5.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08bc136a29a3d1758e07a9cca267be308aeebf5cfd5a10f3f67ab2097683ef5b"
 dependencies = [
  "form_urlencoded",
  "idna",
@@ -14815,6 +14865,7 @@ dependencies = [
  "unicase",
  "url",
  "util_macros",
+ "vte",
  "walkdir",
  "which",
  "windows 0.62.2",
@@ -15186,6 +15237,20 @@ checksum = "15053d8d85c7eccdbefef60f06769760a563c7f0a9d6902a13d35c7800b0ad65"
 dependencies = [
  "futures-util",
  "js-sys",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
+name = "wasm_rpc"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "js-sys",
+ "serde",
+ "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -17051,6 +17116,7 @@ dependencies = [
  "url",
  "util",
  "uuid",
+ "web-time",
  "zed_actions",
  "zlog",
 ]
@@ -17088,6 +17154,7 @@ dependencies = [
  "text",
  "tracing",
  "util",
+ "web-time",
  "worktree",
  "zlog",
  "ztracing",
@@ -17522,6 +17589,7 @@ dependencies = [
  "project_panel",
  "project_symbols",
  "proto",
+ "quick_action_bar",
  "rayon",
  "recent_projects",
  "release_channel",
@@ -17770,6 +17838,70 @@ dependencies = [
 ]
 
 [[package]]
+name = "zed_web_workspace"
+version = "1.29.3"
+dependencies = [
+ "anyhow",
+ "askpass",
+ "assets",
+ "async-trait",
+ "base64",
+ "breadcrumbs",
+ "client",
+ "collections",
+ "console_error_panic_hook",
+ "db",
+ "diagnostics",
+ "editor",
+ "file_finder",
+ "fs",
+ "futures",
+ "git_ui",
+ "go_to_line",
+ "gpui",
+ "gpui_web",
+ "grammars",
+ "js-sys",
+ "language",
+ "language_selector",
+ "language_tools",
+ "log",
+ "lsp",
+ "node_runtime",
+ "outline",
+ "outline_panel",
+ "project",
+ "project_panel",
+ "quick_action_bar",
+ "release_channel",
+ "remote",
+ "rpc",
+ "search",
+ "semver",
+ "serde",
+ "serde_json",
+ "session",
+ "settings",
+ "sqlez",
+ "theme",
+ "theme_settings",
+ "title_bar",
+ "tree-sitter-gitcommit",
+ "tree-sitter-go",
+ "tree-sitter-regex",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+ "ui",
+ "util",
+ "uuid",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm_rpc",
+ "web-sys",
+ "workspace",
+]
+
+[[package]]
 name = "zeno"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -17905,6 +18037,7 @@ dependencies = [
  "collections",
  "log",
  "tempfile",
+ "web-time",
 ]
 
 [[package]]

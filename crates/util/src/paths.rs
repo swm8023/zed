@@ -19,6 +19,13 @@ use path::rel_path::RelPathBuf;
 
 pub use path::PathStyle;
 
+/// The browser uses a virtual root for local workspace data.
+#[cfg(target_family = "wasm")]
+pub fn home_dir() -> &'static PathBuf {
+    static WORKSPACE_ROOT: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/workspace"));
+    &WORKSPACE_ROOT
+}
+
 /// Returns the path to the user's home directory.
 ///
 /// This crate's own tests see a fixed fake path. Every other build, including
@@ -73,7 +80,6 @@ pub trait PathExt {
     fn multiple_extensions(&self) -> Option<String>;
 
     /// Try to make a shell-safe representation of the path.
-    #[cfg(not(target_family = "wasm"))]
     fn try_shell_safe(&self, shell_kind: crate::shell::ShellKind) -> anyhow::Result<String>;
 }
 
@@ -157,7 +163,6 @@ impl<T: AsRef<Path>> PathExt for T {
         Some(parts.into_iter().join("."))
     }
 
-    #[cfg(not(target_family = "wasm"))]
     fn try_shell_safe(&self, shell_kind: crate::shell::ShellKind) -> anyhow::Result<String> {
         use anyhow::Context;
         let path_str = self

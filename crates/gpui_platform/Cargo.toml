@@ -77,5 +77,5 @@ gpui_linux.workspace = true
 gpui_wgpu = { workspace = true, optional = true }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-gpui_web.workspace = true
+gpui_web = { workspace = true, features = ["webgl"] }
 console_error_panic_hook.workspace = true

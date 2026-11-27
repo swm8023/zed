@@ -190,10 +190,10 @@ pub fn render_right_window_controls(
                 .into_any_element(),
             )
         }
-        PlatformStyle::Windows => {
+        PlatformStyle::Windows if cfg!(not(target_family = "wasm")) => {
             Some(platform_windows::WindowsWindowControls::new(height).into_any_element())
         }
-        PlatformStyle::Mac => None,
+        PlatformStyle::Mac | PlatformStyle::Windows => None,
     }
 }
 

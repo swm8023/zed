@@ -304,17 +304,20 @@ impl WrapMap {
                 new: range,
             }];
 
-            if total_rows < WRAP_YIELD_ROW_INTERVAL {
-                let edits = gpui::block_on(new_snapshot.update(
-                    tab_snapshot.clone(),
-                    &tab_edits,
-                    wrap_width,
-                    self.indent_adjustment(tab_snapshot.tab_size),
-                    &mut line_wrapper,
-                    &mut fragment_builder,
-                ));
-                self.snapshot = new_snapshot;
-                self.edits_since_sync = self.edits_since_sync.compose(&edits);
+            if cfg!(not(target_family = "wasm")) && total_rows < WRAP_YIELD_ROW_INTERVAL {
+                #[cfg(not(target_family = "wasm"))]
+                {
+                    let edits = gpui::block_on(new_snapshot.update(
+                        tab_snapshot.clone(),
+                        &tab_edits,
+                        wrap_width,
+                        self.indent_adjustment(tab_snapshot.tab_size),
+                        &mut line_wrapper,
+                        &mut fragment_builder,
+                    ));
+                    self.snapshot = new_snapshot;
+                    self.edits_since_sync = self.edits_since_sync.compose(&edits);
+                }
             } else {
                 let indent_adjustment = self.indent_adjustment(tab_snapshot.tab_size);
                 let task = cx.background_spawn(async move {
@@ -331,10 +334,13 @@ impl WrapMap {
                     (new_snapshot, edits)
                 });
 
-                match cx
+                #[cfg(not(target_family = "wasm"))]
+                let completed = cx
                     .foreground_executor()
-                    .block_with_timeout(Duration::from_millis(5), task)
-                {
+                    .block_with_timeout(Duration::from_millis(5), task);
+                #[cfg(target_family = "wasm")]
+                let completed = Err::<(WrapSnapshot, Patch<WrapRow>), _>(task);
+                match completed {
                     Ok((snapshot, edits)) => {
                         self.snapshot = snapshot;
                         self.edits_since_sync = self.edits_since_sync.compose(&edits);
@@ -410,22 +416,27 @@ impl WrapMap {
                 .flat_map(|(_, tab_edits)| tab_edits.iter())
                 .map(|edit| (edit.new.end.row().saturating_sub(edit.new.start.row()) + 1) as usize)
                 .sum::<usize>();
-            if update_passes + total_new_rows < WRAP_YIELD_ROW_INTERVAL {
-                let mut wrap_edits = Patch::default();
-                for (tab_snapshot, tab_edits) in pending_edits {
-                    let indent_adjustment = self.indent_adjustment(tab_snapshot.tab_size);
-                    let edits = gpui::block_on(snapshot.update(
-                        tab_snapshot,
-                        &tab_edits,
-                        wrap_width,
-                        indent_adjustment,
-                        &mut line_wrapper,
-                        &mut fragment_builder,
-                    ));
-                    wrap_edits = wrap_edits.compose(&edits);
+            if cfg!(not(target_family = "wasm"))
+                && update_passes + total_new_rows < WRAP_YIELD_ROW_INTERVAL
+            {
+                #[cfg(not(target_family = "wasm"))]
+                {
+                    let mut wrap_edits = Patch::default();
+                    for (tab_snapshot, tab_edits) in pending_edits {
+                        let indent_adjustment = self.indent_adjustment(tab_snapshot.tab_size);
+                        let edits = gpui::block_on(snapshot.update(
+                            tab_snapshot,
+                            &tab_edits,
+                            wrap_width,
+                            indent_adjustment,
+                            &mut line_wrapper,
+                            &mut fragment_builder,
+                        ));
+                        wrap_edits = wrap_edits.compose(&edits);
+                    }
+                    self.snapshot = snapshot;
+                    self.edits_since_sync = self.edits_since_sync.compose(&wrap_edits);
                 }
-                self.snapshot = snapshot;
-                self.edits_since_sync = self.edits_since_sync.compose(&wrap_edits);
             } else {
                 let soft_wrap_indent = self.soft_wrap_indent;
                 let update_task = cx.background_spawn(async move {
@@ -448,10 +459,13 @@ impl WrapMap {
                     (snapshot, edits)
                 });
 
-                match cx
+                #[cfg(not(target_family = "wasm"))]
+                let completed = cx
                     .foreground_executor()
-                    .block_with_timeout(Duration::from_millis(1), update_task)
-                {
+                    .block_with_timeout(Duration::from_millis(1), update_task);
+                #[cfg(target_family = "wasm")]
+                let completed = Err::<(WrapSnapshot, Patch<WrapRow>), _>(update_task);
+                match completed {
                     Ok((snapshot, output_edits)) => {
                         self.snapshot = snapshot;
                         self.edits_since_sync = self.edits_since_sync.compose(&output_edits);

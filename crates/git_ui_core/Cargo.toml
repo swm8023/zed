@@ -38,7 +38,6 @@ remote_connection.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 settings.workspace = true
-terminal.workspace = true
 ui.workspace = true
 util.workspace = true
 watch.workspace = true

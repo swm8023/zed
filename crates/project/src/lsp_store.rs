@@ -34,8 +34,7 @@ use self::inlay_hints::BufferInlayHints;
 use crate::{
     CodeAction, Completion, CompletionDisplayOptions, CompletionResponse, CompletionSource,
     CoreCompletion, Hover, InlayHint, InlayId, LocationLink, LspAction, LspPullDiagnostics,
-    ManifestProvidersStore, Project, ProjectItem, ProjectPath, ProjectTransaction,
-    PulledDiagnostics, ResolveState, Symbol,
+    Project, ProjectItem, ProjectPath, ProjectTransaction, PulledDiagnostics, ResolveState, Symbol,
     buffer_store::{BufferStore, BufferStoreEvent},
     environment::ProjectEnvironment,
     lsp_command::{self, *},
@@ -47,7 +46,6 @@ use crate::{
     },
     manifest_tree::{
         LanguageServerTree, LanguageServerTreeNode, LaunchDisposition, ManifestQueryDelegate,
-        ManifestTree,
     },
     prettier_store::{self, PrettierStore, PrettierStoreEvent},
     project_settings::{BinarySettings, LspSettings, ProjectSettings},
@@ -56,6 +54,8 @@ use crate::{
     worktree_store::{WorktreeStore, WorktreeStoreEvent},
     yarn::YarnPathStore,
 };
+#[cfg(not(target_family = "wasm"))]
+use crate::{ManifestProvidersStore, manifest_tree::ManifestTree};
 use anyhow::{Context as _, Result, anyhow};
 use async_trait::async_trait;
 use client::{TypedEnvelope, proto};
@@ -119,6 +119,8 @@ use serde_json::Value;
 use settings::{Settings, SettingsLocation, SettingsStore};
 use sha2::{Digest, Sha256};
 use snippet::Snippet;
+#[cfg(not(target_family = "wasm"))]
+use std::time::Instant;
 use std::{
     any::TypeId,
     borrow::Cow,
@@ -136,11 +138,13 @@ use std::{
         Arc,
         atomic::{self, AtomicUsize},
     },
-    time::{Duration, Instant},
+    time::Duration,
     vec,
 };
 use sum_tree::Dimensions;
 use text::{Anchor, BufferId, LineEnding, OffsetRangeExt, ToPoint as _};
+#[cfg(target_family = "wasm")]
+use web_time::Instant;
 
 use util::{
     ConnectionResult, ResultExt as _, debug_panic, defer, maybe, merge_json_value_into,
@@ -1663,7 +1667,17 @@ impl LocalLspStore {
                     .start_transaction()
                     .context("transaction already open")?;
                 buffer.end_transaction(cx);
-                let transaction_id = buffer.push_empty_transaction(cx.background_executor().now());
+                let now = {
+                    #[cfg(target_family = "wasm")]
+                    {
+                        web_time::Instant::now()
+                    }
+                    #[cfg(not(target_family = "wasm"))]
+                    {
+                        cx.background_executor().now()
+                    }
+                };
+                let transaction_id = buffer.push_empty_transaction(now);
                 buffer.finalize_last_transaction();
                 anyhow::Ok(transaction_id)
             })?;
@@ -4843,15 +4857,31 @@ fn lsp_pull_cancelled_with_retrigger(error: &anyhow::Error) -> bool {
 
 impl LspStore {
     pub fn init(client: &AnyProtoClient) {
-        client.add_entity_request_handler(Self::handle_lsp_query);
         client.add_entity_message_handler(Self::handle_lsp_query_response);
-        client.add_entity_request_handler(Self::handle_restart_language_servers);
-        client.add_entity_request_handler(Self::handle_stop_language_servers);
-        client.add_entity_request_handler(Self::handle_cancel_language_server_work);
         client.add_entity_message_handler(Self::handle_start_language_server);
         client.add_entity_message_handler(Self::handle_update_language_server);
         client.add_entity_message_handler(Self::handle_language_server_log);
         client.add_entity_message_handler(Self::handle_update_diagnostic_summary);
+        client.add_entity_request_handler(Self::handle_pull_workspace_diagnostics);
+        client.add_entity_request_handler(Self::handle_refresh_inlay_hints);
+        client.add_entity_request_handler(Self::handle_refresh_semantic_tokens);
+        client.add_entity_request_handler(Self::handle_refresh_code_lens);
+        client.add_entity_request_handler(Self::handle_refresh_document_colors);
+        client.add_entity_request_handler(Self::handle_refresh_document_links);
+        client.add_entity_request_handler(Self::handle_refresh_document_highlights);
+        client.add_entity_request_handler(Self::handle_refresh_folding_ranges);
+        client.add_entity_request_handler(Self::handle_refresh_document_symbols);
+
+        #[cfg(not(target_family = "wasm"))]
+        Self::register_host_requests(client);
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn register_host_requests(client: &AnyProtoClient) {
+        client.add_entity_request_handler(Self::handle_lsp_query);
+        client.add_entity_request_handler(Self::handle_restart_language_servers);
+        client.add_entity_request_handler(Self::handle_stop_language_servers);
+        client.add_entity_request_handler(Self::handle_cancel_language_server_work);
         client.add_entity_request_handler(Self::handle_format_buffers);
         client.add_entity_request_handler(Self::handle_apply_code_action_kind);
         client.add_entity_request_handler(Self::handle_resolve_completion_documentation);
@@ -4862,19 +4892,10 @@ impl LspStore {
         client.add_entity_request_handler(Self::handle_resolve_document_link);
         client.add_entity_request_handler(Self::handle_get_color_presentation);
         client.add_entity_request_handler(Self::handle_open_buffer_for_symbol);
-        client.add_entity_request_handler(Self::handle_refresh_inlay_hints);
-        client.add_entity_request_handler(Self::handle_refresh_semantic_tokens);
-        client.add_entity_request_handler(Self::handle_refresh_code_lens);
-        client.add_entity_request_handler(Self::handle_refresh_document_colors);
-        client.add_entity_request_handler(Self::handle_refresh_document_links);
-        client.add_entity_request_handler(Self::handle_refresh_document_highlights);
-        client.add_entity_request_handler(Self::handle_refresh_folding_ranges);
-        client.add_entity_request_handler(Self::handle_refresh_document_symbols);
         client.add_entity_request_handler(Self::handle_on_type_formatting);
         client.add_entity_request_handler(Self::handle_apply_additional_edits_for_completion);
         client.add_entity_request_handler(Self::handle_register_buffer_with_language_servers);
         client.add_entity_request_handler(Self::handle_rename_project_entry);
-        client.add_entity_request_handler(Self::handle_pull_workspace_diagnostics);
         client.add_entity_request_handler(Self::handle_lsp_get_completions);
         client.add_entity_request_handler(Self::handle_lsp_command::<GetDocumentHighlights>);
         client.add_entity_request_handler(Self::handle_lsp_command::<GetDocumentSymbols>);
@@ -4916,6 +4937,10 @@ impl LspStore {
     }
 
     pub fn as_local(&self) -> Option<&LocalLspStore> {
+        #[cfg(target_family = "wasm")]
+        return None;
+
+        #[cfg(not(target_family = "wasm"))]
         match &self.mode {
             LspStoreMode::Local(local_lsp_store) => Some(local_lsp_store),
             _ => None,
@@ -4923,6 +4948,10 @@ impl LspStore {
     }
 
     pub fn as_local_mut(&mut self) -> Option<&mut LocalLspStore> {
+        #[cfg(target_family = "wasm")]
+        return None;
+
+        #[cfg(not(target_family = "wasm"))]
         match &mut self.mode {
             LspStoreMode::Local(local_lsp_store) => Some(local_lsp_store),
             _ => None,
@@ -4945,6 +4974,7 @@ impl LspStore {
         }
     }
 
+    #[cfg(not(target_family = "wasm"))]
     pub fn new_local(
         buffer_store: Entity<BufferStore>,
         worktree_store: Entity<WorktreeStore>,
@@ -5078,6 +5108,44 @@ impl LspStore {
         project_id: u64,
         cx: &mut Context<Self>,
     ) -> Self {
+        Self::new_remote_state(
+            buffer_store,
+            worktree_store,
+            languages,
+            RemoteLspStore {
+                upstream_client: Some(upstream_client),
+                upstream_project_id: project_id,
+            },
+            cx,
+        )
+    }
+
+    #[cfg(target_family = "wasm")]
+    pub(super) fn new_without_server(
+        buffer_store: Entity<BufferStore>,
+        worktree_store: Entity<WorktreeStore>,
+        languages: Arc<LanguageRegistry>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        Self::new_remote_state(
+            buffer_store,
+            worktree_store,
+            languages,
+            RemoteLspStore {
+                upstream_client: None,
+                upstream_project_id: 0,
+            },
+            cx,
+        )
+    }
+
+    fn new_remote_state(
+        buffer_store: Entity<BufferStore>,
+        worktree_store: Entity<WorktreeStore>,
+        languages: Arc<LanguageRegistry>,
+        remote_state: RemoteLspStore,
+        cx: &mut Context<Self>,
+    ) -> Self {
         cx.subscribe(&buffer_store, Self::on_buffer_store_event)
             .detach();
         cx.subscribe(&worktree_store, Self::on_worktree_store_event)
@@ -5087,10 +5155,7 @@ impl LspStore {
             (Self::maintain_workspace_config(receiver, cx), sender)
         };
         Self {
-            mode: LspStoreMode::Remote(RemoteLspStore {
-                upstream_client: Some(upstream_client),
-                upstream_project_id: project_id,
-            }),
+            mode: LspStoreMode::Remote(remote_state),
             downstream_client: None,
             last_formatting_failure: None,
             buffer_store,
@@ -16638,7 +16703,7 @@ pub struct LanguageServerProgress {
     pub message: Option<String>,
     pub percentage: Option<usize>,
     #[serde(skip_serializing)]
-    pub last_update_at: Instant,
+    pub last_update_at: web_time::Instant,
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Serialize)]

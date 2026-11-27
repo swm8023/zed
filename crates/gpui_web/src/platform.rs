@@ -11,8 +11,8 @@ use futures::channel::oneshot;
 use gpui::{
     Action, ActivityGuard, AnyWindowHandle, BackgroundExecutor, ClipboardEntry, ClipboardItem,
     ClipboardReadError, ClipboardString, CursorStyle, DummyKeyboardMapper, ForegroundExecutor,
-    GestureTuning, Image, ImageFormat, Keymap, Menu, MenuItem, PathPromptOptions, Platform,
-    PlatformDisplay, PlatformGestures, PlatformKeyboardLayout, PlatformKeyboardMapper,
+    GestureTuning, Image, ImageFormat, Keymap, Menu, MenuItem, OwnedMenu, PathPromptOptions,
+    Platform, PlatformDisplay, PlatformGestures, PlatformKeyboardLayout, PlatformKeyboardMapper,
     PlatformTextSystem, PlatformWindow, ScrollPhysics, Task, ThermalState, WindowAppearance,
     WindowKind, WindowParams, popup::PopupNotSupportedError,
 };
@@ -38,6 +38,7 @@ pub struct WebPlatform {
     active_window: Rc<RefCell<Option<AnyWindowHandle>>>,
     active_display: Rc<dyn PlatformDisplay>,
     callbacks: RefCell<WebPlatformCallbacks>,
+    menus: RefCell<Vec<OwnedMenu>>,
     backend_preference: WebBackendPreference,
     wgpu_context: Rc<RefCell<Option<WgpuContext>>>,
     prepared_window: Rc<RefCell<Option<PreparedWebWindow>>>,
@@ -202,6 +203,7 @@ impl WebPlatform {
             active_window: Rc::new(RefCell::new(None)),
             active_display,
             callbacks: RefCell::new(WebPlatformCallbacks::default()),
+            menus: RefCell::new(Vec::new()),
             backend_preference,
             wgpu_context: Rc::new(RefCell::new(None)),
             prepared_window: Rc::new(RefCell::new(None)),
@@ -523,7 +525,13 @@ impl Platform for WebPlatform {
 
     fn on_system_wake(&self, _callback: Box<dyn FnMut()>) {}
 
-    fn set_menus(&self, _menus: Vec<Menu>, _keymap: &Keymap) {}
+    fn set_menus(&self, menus: Vec<Menu>, _keymap: &Keymap) {
+        *self.menus.borrow_mut() = menus.into_iter().map(|menu| menu.owned()).collect();
+    }
+
+    fn get_menus(&self) -> Option<Vec<OwnedMenu>> {
+        Some(self.menus.borrow().clone())
+    }
 
     fn set_dock_menu(&self, _menu: Vec<MenuItem>, _keymap: &Keymap) {}
 

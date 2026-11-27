@@ -24,7 +24,9 @@ use std::{
     time::Duration,
 };
 use task::TcpArgumentsTemplate;
-use util::{ConnectionResult, ResultExt, process::Child};
+#[cfg(not(target_family = "wasm"))]
+use util::process::Child;
+use util::{ConnectionResult, ResultExt};
 
 use crate::{
     adapters::{DebugAdapterBinary, TcpArguments},
@@ -75,6 +77,7 @@ pub trait Transport: Send + Sync {
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 async fn start(
     binary: &DebugAdapterBinary,
     log_handlers: LogHandlers,
@@ -98,6 +101,15 @@ async fn start(
             StdioTransport::start(binary, log_handlers, cx).await?,
         ))
     }
+}
+
+#[cfg(target_family = "wasm")]
+async fn start(
+    _binary: &DebugAdapterBinary,
+    _log_handlers: LogHandlers,
+    _cx: &mut AsyncApp,
+) -> Result<Box<dyn Transport>> {
+    bail!("Debug adapters run on the remote host")
 }
 
 pub(crate) struct PendingRequests {
@@ -520,6 +532,17 @@ fn interpolate_message(
     out
 }
 
+#[cfg(target_family = "wasm")]
+pub struct TcpTransport;
+
+#[cfg(target_family = "wasm")]
+impl TcpTransport {
+    pub async fn unused_port(_host: IpAddr) -> Result<u16> {
+        bail!("Allocating a debug adapter socket requires the native runtime")
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
 pub struct TcpTransport {
     executor: BackgroundExecutor,
     pub port: u16,
@@ -530,6 +553,7 @@ pub struct TcpTransport {
     _stdout_task: Option<Task<()>>,
 }
 
+#[cfg(not(target_family = "wasm"))]
 impl TcpTransport {
     /// Get an open port to use with the tcp client when not supplied by debug config
     pub async fn port(host: &TcpArgumentsTemplate) -> Result<u16> {
@@ -620,6 +644,7 @@ impl TcpTransport {
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 impl Transport for TcpTransport {
     fn has_adapter_logs(&self) -> bool {
         true
@@ -689,6 +714,7 @@ impl Transport for TcpTransport {
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 impl Drop for TcpTransport {
     fn drop(&mut self) {
         if let Some(mut p) = self.process.lock().take() {
@@ -697,11 +723,13 @@ impl Drop for TcpTransport {
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 pub struct StdioTransport {
     process: Mutex<Child>,
     _stderr_task: Option<Task<()>>,
 }
 
+#[cfg(not(target_family = "wasm"))]
 impl StdioTransport {
     // #[allow(dead_code, reason = "This is used in non test builds of Zed")]
     async fn start(
@@ -742,6 +770,7 @@ impl StdioTransport {
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 impl Transport for StdioTransport {
     fn has_adapter_logs(&self) -> bool {
         true
@@ -774,6 +803,7 @@ impl Transport for StdioTransport {
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 impl Drop for StdioTransport {
     fn drop(&mut self) {
         self.process.lock().kill().log_err();

@@ -881,6 +881,11 @@ fn prompt_and_open_paths(
     create_new_window: bool,
     cx: &mut App,
 ) {
+    #[cfg(target_family = "wasm")]
+    let workspace_window = cx
+        .active_window()
+        .and_then(|window| window.downcast::<MultiWorkspace>());
+    #[cfg(not(target_family = "wasm"))]
     let workspace_window =
         workspace_windows_for_location(&SerializedWorkspaceLocation::Local, cx).next();
 
@@ -944,6 +949,42 @@ pub fn prompt_for_open_path_and_open(
     window: &mut Window,
     cx: &mut Context<Workspace>,
 ) {
+    #[cfg(target_family = "wasm")]
+    if workspace.project().read(cx).is_via_remote_server() {
+        let paths = workspace.prompt_for_open_path(
+            options,
+            DirectoryLister::Project(workspace.project().clone()),
+            mode,
+            window,
+            cx,
+        );
+        cx.spawn_in(window, async move |workspace, cx| {
+            let Some(selection) = paths.await? else {
+                return anyhow::Ok(());
+            };
+            let task = workspace.update_in(cx, |workspace, window, cx| {
+                workspace.open_paths(
+                    selection.paths,
+                    OpenOptions {
+                        visible: Some(OpenVisible::All),
+                        ..OpenOptions::default()
+                    },
+                    None,
+                    window,
+                    cx,
+                )
+            })?;
+            for result in task.await.into_iter().flatten() {
+                if let Err(error) = result {
+                    workspace.update(cx, |workspace, cx| workspace.show_error(error, cx))?;
+                }
+            }
+            Ok(())
+        })
+        .detach_and_log_err(cx);
+        return;
+    }
+
     let paths = workspace.prompt_for_open_path(
         options,
         DirectoryLister::Local(workspace.project().clone(), app_state.fs.clone()),
@@ -2187,7 +2228,6 @@ impl Workspace {
         let project_handle = Project::local(
             app_state.client.clone(),
             app_state.node_runtime.clone(),
-
             app_state.languages.clone(),
             app_state.fs.clone(),
             env,
@@ -3478,7 +3518,10 @@ impl Workspace {
         // TODO: If `on_prompt_for_open_path` is set, we should always use it
         // rather than gating on `use_system_path_prompts`. This would let tests
         // inject a mock without also having to disable the setting.
-        if !lister.is_local(cx) || !WorkspaceSettings::get_global(cx).use_system_path_prompts {
+        if cfg!(target_family = "wasm")
+            || !lister.is_local(cx)
+            || !WorkspaceSettings::get_global(cx).use_system_path_prompts
+        {
             let prompt = self.on_prompt_for_open_path.take().unwrap();
             let rx = prompt(self, lister, mode, window, cx);
             self.on_prompt_for_open_path = Some(prompt);
@@ -4492,6 +4535,18 @@ impl Workspace {
         let pane = self.active_pane().clone();
         let item = pane.read(cx).active_item();
 
+        #[cfg(target_family = "wasm")]
+        if item.as_ref().is_some_and(|item| item.is_dirty(cx))
+            && project
+                .read(cx)
+                .remote_connection_state(cx)
+                .is_some_and(|state| state != remote::ConnectionState::Connected)
+        {
+            return Task::ready(Err(anyhow!(
+                "The local server is disconnected. Your unsaved changes are still in the editor."
+            )));
+        }
+
         window.spawn(cx, async move |cx| {
             if let Some(item) = item {
                 Pane::save_item(project, pane, item.as_ref(), save_intent, cx)
@@ -4664,8 +4719,7 @@ impl Workspace {
         let other_is_zoomed = self.zoomed.is_some() && self.zoomed_position != Some(dock_side);
         let was_visible = self.is_dock_at_position_open(dock_side, cx) && !other_is_zoomed;
 
-        if let Some(panel) = self.dock_at_position(dock_side).read(cx).active_panel() {
-        }
+        if let Some(panel) = self.dock_at_position(dock_side).read(cx).active_panel() {}
         if was_visible {
             self.save_open_dock_positions(cx);
         }
@@ -4832,7 +4886,6 @@ impl Workspace {
         if !did_focus_panel && WorkspaceSettings::get_global(cx).close_panel_on_toggle {
             self.close_panel::<T>(window, cx);
         }
-
 
         did_focus_panel
     }
@@ -6268,7 +6321,6 @@ impl Workspace {
 
     fn handle_panel_focused(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.flush_deferred_saves(window, cx);
-
     }
 
     fn flush_deferred_saves(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -6340,7 +6392,6 @@ impl Workspace {
                 serialize_workspace = *focus_changed || pane != self.active_pane();
                 if pane == self.active_pane() {
                     self.active_item_path_changed(*focus_changed, window, cx);
-
                 } else if *local {
                     self.set_active_pane(pane, window, cx);
                 }
@@ -7842,29 +7893,36 @@ impl Workspace {
             .on_action(cx.listener(Self::move_focused_panel_to_next_position))
             .on_action(cx.listener(Self::reopen_last_picker))
             .on_action(cx.listener(Self::toggle_theme_mode))
-            .when(!active_item_is_read_only, |this| {
-                this.on_action(cx.listener(|workspace, action: &Save, window, cx| {
-                    workspace
-                        .save_active_item(
-                            action.save_intent.unwrap_or(SaveIntent::Save),
-                            window,
-                            cx,
-                        )
-                        .detach_and_prompt_err("Failed to save", window, cx, |_, _, _| None);
-                }))
-                .on_action(cx.listener(|workspace, _: &FormatAndSave, window, cx| {
-                    workspace
-                        .save_active_item(SaveIntent::FormatAndSave, window, cx)
-                        .detach_and_prompt_err("Failed to save", window, cx, |_, _, _| None);
-                }))
-                .on_action(cx.listener(
-                    |workspace, _: &SaveWithoutFormat, window, cx| {
+            .when(
+                !active_item_is_read_only
+                    || (cfg!(target_family = "wasm")
+                        && self.project.read(cx).is_via_remote_server()),
+                |this| {
+                    this.on_action(cx.listener(|workspace, action: &Save, window, cx| {
                         workspace
-                            .save_active_item(SaveIntent::SaveWithoutFormat, window, cx)
+                            .save_active_item(
+                                action.save_intent.unwrap_or(SaveIntent::Save),
+                                window,
+                                cx,
+                            )
                             .detach_and_prompt_err("Failed to save", window, cx, |_, _, _| None);
-                    },
-                ))
-            })
+                    }))
+                    .on_action(cx.listener(|workspace, _: &FormatAndSave, window, cx| {
+                        workspace
+                            .save_active_item(SaveIntent::FormatAndSave, window, cx)
+                            .detach_and_prompt_err("Failed to save", window, cx, |_, _, _| None);
+                    }))
+                    .on_action(cx.listener(
+                        |workspace, _: &SaveWithoutFormat, window, cx| {
+                            workspace
+                                .save_active_item(SaveIntent::SaveWithoutFormat, window, cx)
+                                .detach_and_prompt_err("Failed to save", window, cx, |_, _, _| {
+                                    None
+                                });
+                        },
+                    ))
+                },
+            )
             .on_action(cx.listener(|workspace, _: &SaveAs, window, cx| {
                 workspace
                     .save_active_item(SaveIntent::SaveAs, window, cx)
@@ -10100,7 +10158,6 @@ actions!(
     ]
 );
 
-
 fn serialize_pane_handle(
     pane_handle: &Entity<Pane>,
     window: &mut Window,
@@ -10480,7 +10537,6 @@ pub fn open_workspace_by_id(
     let project_handle = Project::local(
         app_state.client.clone(),
         app_state.node_runtime.clone(),
-
         app_state.languages.clone(),
         app_state.fs.clone(),
         None,
@@ -10832,7 +10888,6 @@ pub fn open_remote_project_with_new_connection(
                 session,
                 app_state.client.clone(),
                 app_state.node_runtime.clone(),
-
                 app_state.languages.clone(),
                 app_state.fs.clone(),
                 true,

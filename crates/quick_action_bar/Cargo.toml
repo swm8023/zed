@@ -1,0 +1,32 @@
+[package]
+name = "quick_action_bar"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+license = "GPL-3.0-or-later"
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/quick_action_bar.rs"
+doctest = false
+
+[dependencies]
+editor.workspace = true
+git.workspace = true
+gpui.workspace = true
+project.workspace = true
+search.workspace = true
+settings.workspace = true
+ui.workspace = true
+workspace.workspace = true
+zed_actions.workspace = true
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+markdown_preview.workspace = true
+picker.workspace = true
+repl.workspace = true
+svg_preview.workspace = true
+tabular_data_preview.workspace = true
+util.workspace = true

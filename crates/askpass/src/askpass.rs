@@ -452,13 +452,13 @@ fn connect_and_write_prompt(socket: &str, mut buffer: Vec<u8>) {
         buffer.push(b'\0');
     }
 
-    if let Err(err) = stream.write_all(&buffer) {
+    if let Err(err) = std::io::Write::write_all(&mut stream, &buffer) {
         eprintln!("Error writing to socket: {}", err);
         exit(1);
     }
 
     let mut response = Vec::new();
-    if let Err(err) = stream.read_to_end(&mut response) {
+    if let Err(err) = std::io::Read::read_to_end(&mut stream, &mut response) {
         eprintln!("Error reading from socket: {}", err);
         exit(1);
     }

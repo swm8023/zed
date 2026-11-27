@@ -34,7 +34,7 @@ impl PlatformStyle {
     pub const fn platform() -> Self {
         if cfg!(any(target_os = "linux", target_os = "freebsd")) {
             Self::Linux
-        } else if cfg!(target_os = "windows") {
+        } else if cfg!(any(target_os = "windows", target_family = "wasm")) {
             Self::Windows
         } else {
             Self::Mac

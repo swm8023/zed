@@ -1,14 +1,26 @@
+#[cfg(not(target_family = "wasm"))]
 pub mod fs_watcher;
+
+#[cfg(not(target_family = "wasm"))]
+pub use fs_watcher::requires_poll_watcher;
+#[cfg(not(target_family = "wasm"))]
 mod git_clone_progress;
+
+#[cfg(target_family = "wasm")]
+pub fn requires_poll_watcher(_: &Path) -> bool {
+    false
+}
 
 use parking_lot::Mutex;
 use slotmap::{KeyData, SlotMap};
 use std::ffi::OsString;
 use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
-use std::time::Instant;
 use util::maybe;
+use web_time::Instant;
 
-use anyhow::{Context as _, Result};
+#[cfg(target_family = "wasm")]
+use anyhow::anyhow;
+use anyhow::{Context as _, Result, bail};
 use futures::stream::iter;
 use gpui::App;
 use gpui::BackgroundExecutor;
@@ -30,15 +42,19 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 #[cfg(any(target_os = "macos", target_os = "freebsd"))]
 use std::mem::MaybeUninit;
 
+#[cfg(not(target_family = "wasm"))]
 use async_tar::Archive;
 use futures::{AsyncRead, Stream, StreamExt, future::BoxFuture};
-use git::repository::{GitRepository, RealGitRepository};
+use git::repository::GitRepository;
+#[cfg(not(target_family = "wasm"))]
+use git::repository::RealGitRepository;
 #[cfg(windows)]
 use is_executable::IsExecutable;
 use rope::Rope;
 use serde::{Deserialize, Serialize};
+#[cfg(not(target_family = "wasm"))]
 use smol::io::AsyncWriteExt;
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 use std::path::Component;
 use std::{
     io::{self, Write},
@@ -47,28 +63,29 @@ use std::{
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+#[cfg(not(target_family = "wasm"))]
 use tempfile::TempDir;
 use text::LineEnding;
 
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 mod fake_git_repo;
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 use collections::{BTreeMap, btree_map};
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 pub use fake_git_repo::FakeBlobReadGate;
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 use fake_git_repo::{FakeCommitDataEntry, FakeGitRepositoryState};
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 use git::{
     repository::{CommitData, InitialGraphCommitData, RepoPath, Worktree, repo_path},
     status::{FileStatus, StatusCode, TrackedStatus, UnmergedStatus},
 };
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 use util::paths::normalize_path;
 
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 use smol::io::AsyncReadExt;
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 use std::ffi::OsStr;
 
 pub trait Watcher: Send + Sync {
@@ -110,6 +127,7 @@ pub trait Fs: Send + Sync {
         path: &Path,
         content: Pin<&mut (dyn AsyncRead + Send)>,
     ) -> Result<()>;
+    #[cfg(not(target_family = "wasm"))]
     async fn extract_tar_file(
         &self,
         path: &Path,
@@ -151,6 +169,16 @@ pub trait Fs: Send + Sync {
         &self,
         path: &Path,
     ) -> Result<Pin<Box<dyn Send + Stream<Item = Result<PathBuf>>>>>;
+    async fn read_dir_with_types(&self, path: &Path) -> Result<Vec<(PathBuf, bool)>> {
+        let mut entries = Vec::new();
+        let mut paths = self.read_dir(path).await?;
+        while let Some(path) = paths.next().await {
+            let path = path?;
+            let is_dir = self.is_dir(&path).await;
+            entries.push((path, is_dir));
+        }
+        Ok(entries)
+    }
 
     /// Creates the native file watcher now rather than on the first `watch`, so a
     /// failure to start it (e.g. inotify instance limits) can be reported at startup.
@@ -159,6 +187,7 @@ pub trait Fs: Send + Sync {
     }
 
     /// Records raw local watcher notifications until the returned recording is dropped.
+    #[cfg(not(target_family = "wasm"))]
     fn record_watcher_diagnostics(&self) -> Option<fs_watcher::WatchRecording> {
         None
     }
@@ -183,13 +212,27 @@ pub trait Fs: Send + Sync {
 
     fn open_repo(
         &self,
-        abs_dot_git: &Path,
-        system_git_binary_path: Option<&Path>,
-    ) -> Result<Arc<dyn GitRepository>>;
-    async fn git_init(&self, abs_work_directory: &Path, fallback_branch_name: String)
-    -> Result<()>;
-    async fn git_clone(&self, abs_work_directory: &Path, repo_url: &str) -> Result<()>;
-    async fn git_config(&self, abs_work_directory: &Path, args: Vec<String>) -> Result<String>;
+        _abs_dot_git: &Path,
+        _system_git_binary_path: Option<&Path>,
+    ) -> Result<Arc<dyn GitRepository>> {
+        bail!("Git repositories are not supported in the browser")
+    }
+
+    async fn git_init(
+        &self,
+        _abs_work_directory: &Path,
+        _fallback_branch_name: String,
+    ) -> Result<()> {
+        bail!("Git repositories are not supported in the browser")
+    }
+
+    async fn git_clone(&self, _abs_work_directory: &Path, _repo_url: &str) -> Result<()> {
+        bail!("Git repositories are not supported in the browser")
+    }
+
+    async fn git_config(&self, _abs_work_directory: &Path, _args: Vec<String>) -> Result<String> {
+        bail!("Git repositories are not supported in the browser")
+    }
     fn is_fake(&self) -> bool;
     async fn is_case_sensitive(&self) -> bool;
     fn subscribe_to_jobs(&self) -> JobEventReceiver;
@@ -201,7 +244,7 @@ pub trait Fs: Send + Sync {
     /// trash back to its original path.
     async fn restore(&self, trash_id: TrashId) -> std::result::Result<PathBuf, TrashRestoreError>;
 
-    #[cfg(feature = "test-support")]
+    #[cfg(all(feature = "test-support", not(target_family = "wasm")))]
     fn as_fake(&self) -> Arc<FakeFs> {
         panic!("called as_fake on a real fs");
     }
@@ -212,6 +255,7 @@ pub trait Fs: Send + Sync {
 // tests from changes to that crate's API surface.
 /// Represents a file or directory that has been moved to the system trash,
 /// retaining enough information to restore it to its original location.
+#[cfg(not(target_family = "wasm"))]
 #[derive(Clone, PartialEq, Debug)]
 struct TrashedEntry {
     /// Platform-specific identifier for the file/directory in the trash.
@@ -226,6 +270,7 @@ struct TrashedEntry {
     pub original_parent: PathBuf,
 }
 
+#[cfg(not(target_family = "wasm"))]
 impl From<trash::TrashItem> for TrashedEntry {
     fn from(item: trash::TrashItem) -> Self {
         Self {
@@ -236,6 +281,7 @@ impl From<trash::TrashItem> for TrashedEntry {
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 impl TrashedEntry {
     fn into_trash_item(self) -> trash::TrashItem {
         trash::TrashItem {
@@ -264,6 +310,7 @@ pub enum TrashRestoreError {
     Unknown { description: String },
 }
 
+#[cfg(not(target_family = "wasm"))]
 impl From<trash::Error> for TrashRestoreError {
     fn from(err: trash::Error) -> Self {
         match err {
@@ -282,13 +329,170 @@ impl Global for GlobalFs {}
 
 impl dyn Fs {
     /// Returns the global [`Fs`].
-    pub fn global(cx: &App) -> Arc<Self> {
-        GlobalFs::global(cx).0.clone()
+    pub fn global(_cx: &App) -> Arc<Self> {
+        #[cfg(target_family = "wasm")]
+        return Arc::new(WasmFs);
+
+        #[cfg(not(target_family = "wasm"))]
+        GlobalFs::global(_cx).0.clone()
     }
 
     /// Sets the global [`Fs`].
     pub fn set_global(fs: Arc<Self>, cx: &mut App) {
         cx.set_global(GlobalFs(fs));
+    }
+}
+
+#[cfg(target_family = "wasm")]
+pub struct WasmFs;
+
+#[cfg(target_family = "wasm")]
+struct WasmWatcher;
+
+#[cfg(target_family = "wasm")]
+impl Watcher for WasmWatcher {
+    fn add(&self, _: &Path) -> Result<()> {
+        Ok(())
+    }
+
+    fn remove(&self, _: &Path) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(target_family = "wasm")]
+#[async_trait::async_trait]
+impl Fs for WasmFs {
+    async fn create_dir(&self, _: &Path) -> Result<()> {
+        Ok(())
+    }
+
+    async fn create_symlink(&self, _: &Path, _: PathBuf) -> Result<()> {
+        Err(anyhow!("not supported on wasm"))
+    }
+
+    async fn create_file(&self, _: &Path, _: CreateOptions) -> Result<()> {
+        Ok(())
+    }
+
+    async fn create_file_with(&self, _: &Path, _: Pin<&mut (dyn AsyncRead + Send)>) -> Result<()> {
+        Err(anyhow!("not supported on wasm"))
+    }
+
+    async fn copy_file(&self, _: &Path, _: &Path, _: CopyOptions) -> Result<()> {
+        Err(anyhow!("not supported on wasm"))
+    }
+
+    async fn rename(&self, _: &Path, _: &Path, _: RenameOptions) -> Result<()> {
+        Err(anyhow!("not supported on wasm"))
+    }
+
+    async fn remove_dir(&self, _: &Path, _: RemoveOptions) -> Result<()> {
+        Err(anyhow!("not supported on wasm"))
+    }
+
+    async fn trash(&self, _: &Path, _: RemoveOptions) -> Result<TrashId> {
+        Err(anyhow!("not supported on wasm"))
+    }
+
+    async fn remove_file(&self, _: &Path, _: RemoveOptions) -> Result<()> {
+        Err(anyhow!("not supported on wasm"))
+    }
+
+    async fn open_handle(&self, _: &Path) -> Result<Arc<dyn FileHandle>> {
+        Err(anyhow!("not supported on wasm"))
+    }
+
+    async fn open_sync(&self, _: &Path) -> Result<Box<dyn ReadSeek + Send + Sync>> {
+        Err(anyhow!("not supported on wasm"))
+    }
+
+    async fn load_bytes(&self, _: &Path) -> Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    async fn atomic_write(&self, _: PathBuf, _: String) -> Result<()> {
+        Ok(())
+    }
+
+    async fn save(&self, _: &Path, _: &Rope, _: LineEnding) -> Result<()> {
+        Ok(())
+    }
+
+    async fn write(&self, _: &Path, _: &[u8]) -> Result<()> {
+        Ok(())
+    }
+
+    async fn canonicalize(&self, path: &Path) -> Result<PathBuf> {
+        Ok(path.to_path_buf())
+    }
+
+    async fn is_file(&self, _: &Path) -> bool {
+        false
+    }
+
+    async fn is_dir(&self, _: &Path) -> bool {
+        false
+    }
+
+    async fn metadata(&self, _: &Path) -> Result<Option<Metadata>> {
+        Ok(None)
+    }
+
+    async fn read_link(&self, _: &Path) -> Result<PathBuf> {
+        Err(anyhow!("not supported on wasm"))
+    }
+
+    async fn read_dir(
+        &self,
+        _: &Path,
+    ) -> Result<Pin<Box<dyn Send + Stream<Item = Result<PathBuf>>>>> {
+        Ok(Box::pin(futures::stream::empty()))
+    }
+
+    fn path_exists(&self, _: &Path) -> bool {
+        false
+    }
+
+    fn is_path_case_sensitive(&self, _: &Path) -> bool {
+        true
+    }
+
+    fn requires_poll_watcher(&self, _: &Path) -> bool {
+        false
+    }
+
+    async fn watch(
+        &self,
+        _: &Path,
+        _: Duration,
+    ) -> (
+        Pin<Box<dyn Send + Stream<Item = Vec<PathEvent>>>>,
+        Arc<dyn Watcher>,
+    ) {
+        (Box::pin(futures::stream::empty()), Arc::new(WasmWatcher))
+    }
+
+    fn is_fake(&self) -> bool {
+        false
+    }
+
+    async fn is_case_sensitive(&self) -> bool {
+        true
+    }
+
+    fn subscribe_to_jobs(&self) -> JobEventReceiver {
+        futures::channel::mpsc::unbounded().1
+    }
+
+    fn original_path_for_trash_id(&self, _: TrashId) -> Option<PathBuf> {
+        None
+    }
+
+    async fn restore(&self, _: TrashId) -> std::result::Result<PathBuf, TrashRestoreError> {
+        Err(TrashRestoreError::Unknown {
+            description: "wasm".into(),
+        })
     }
 }
 
@@ -453,6 +657,7 @@ impl TrashId {
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 pub struct RealFs {
     this: std::sync::Weak<Self>,
     bundled_git_binary_path: Option<PathBuf>,
@@ -469,6 +674,7 @@ pub trait FileHandle: Send + Sync + std::fmt::Debug {
     fn current_path(&self, fs: &Arc<dyn Fs>) -> Result<PathBuf>;
 }
 
+#[cfg(not(target_family = "wasm"))]
 impl FileHandle for std::fs::File {
     #[cfg(target_os = "macos")]
     fn current_path(&self, _: &Arc<dyn Fs>) -> Result<PathBuf> {
@@ -561,8 +767,10 @@ impl FileHandle for std::fs::File {
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 pub struct RealWatcher {}
 
+#[cfg(not(target_family = "wasm"))]
 impl RealFs {
     pub fn new(git_binary_path: Option<PathBuf>, executor: BackgroundExecutor) -> Arc<Self> {
         Arc::new_cyclic(|this| Self {
@@ -736,6 +944,7 @@ fn read_dir_entries(path: PathBuf) -> Result<impl Send + Iterator<Item = Result<
     }))
 }
 
+#[cfg(not(target_family = "wasm"))]
 #[async_trait::async_trait]
 impl Fs for RealFs {
     async fn create_dir(&self, path: &Path) -> Result<()> {
@@ -1433,7 +1642,10 @@ impl Fs for RealFs {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+#[cfg(all(
+    not(target_family = "wasm"),
+    not(any(target_os = "linux", target_os = "freebsd"))
+))]
 impl Watcher for RealWatcher {
     fn add(&self, _: &Path) -> Result<()> {
         Ok(())
@@ -1444,7 +1656,7 @@ impl Watcher for RealWatcher {
     }
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 pub struct FakeFs {
     this: std::sync::Weak<Self>,
     // Use an unfair lock to ensure tests are deterministic.
@@ -1454,7 +1666,7 @@ pub struct FakeFs {
     poll_watcher: Arc<fs_watcher::OsWatcher>,
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 struct FakeFsState {
     root: FakeFsEntry,
     next_inode: u64,
@@ -1477,7 +1689,7 @@ struct FakeFsState {
 /// The kernel's side of file watching, as far as the real watcher code above
 /// notify can tell: the paths the backend has registered and the callback that
 /// delivers events for them into the native `OsWatcher`.
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 #[derive(Default)]
 struct FakeWatches {
     registered_paths: Vec<PathBuf>,
@@ -1487,7 +1699,7 @@ struct FakeWatches {
     file_to_create_on_watch: Option<(PathBuf, PathBuf)>,
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 #[derive(Clone, Debug)]
 enum FakeFsEntry {
     File {
@@ -1510,7 +1722,7 @@ enum FakeFsEntry {
     },
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 impl PartialEq for FakeFsEntry {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -1571,7 +1783,7 @@ impl PartialEq for FakeFsEntry {
     }
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 impl FakeFsState {
     fn get_and_increment_mtime(&mut self) -> MTime {
         let mtime = self.next_mtime;
@@ -1832,11 +2044,11 @@ impl fs_watcher::WatchBackend for FakeWatchBackend {
     }
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 pub static FS_DOT_GIT: std::sync::LazyLock<&'static OsStr> =
     std::sync::LazyLock::new(|| OsStr::new(".git"));
 
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 impl FakeFs {
     /// We need to use something large enough for Windows and Unix to consider this a new file.
     /// https://doc.rust-lang.org/nightly/std/time/struct.SystemTime.html#platform-specific-behavior
@@ -2936,7 +3148,7 @@ impl FakeFs {
     }
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 impl FakeFsEntry {
     fn is_file(&self) -> bool {
         matches!(self, Self::File { .. })
@@ -2963,13 +3175,13 @@ impl FakeFsEntry {
     }
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 #[derive(Debug)]
 struct FakeHandle {
     inode: u64,
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 impl FileHandle for FakeHandle {
     fn current_path(&self, fs: &Arc<dyn Fs>) -> Result<PathBuf> {
         let fs = fs.as_fake();
@@ -2995,7 +3207,7 @@ impl FileHandle for FakeHandle {
     }
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(all(feature = "test-support", not(target_family = "wasm")))]
 #[async_trait::async_trait]
 impl Fs for FakeFs {
     async fn create_dir(&self, path: &Path) -> Result<()> {
@@ -3587,7 +3799,7 @@ impl Fs for FakeFs {
         }
     }
 
-    #[cfg(feature = "test-support")]
+    #[cfg(all(feature = "test-support", not(target_family = "wasm")))]
     fn as_fake(&self) -> Arc<FakeFs> {
         self.this.upgrade().unwrap()
     }

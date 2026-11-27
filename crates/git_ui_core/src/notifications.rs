@@ -15,7 +15,7 @@ pub fn open_output(
 ) {
     let operation = operation.into();
 
-    let plain_text = terminal::strip_ansi_text(output.as_bytes());
+    let plain_text = util::ansi::strip_ansi_text(output.as_bytes());
 
     let buffer = cx.new(|cx| Buffer::local(plain_text.as_str(), cx));
     buffer.update(cx, |buffer, cx| {

@@ -15,6 +15,7 @@ pub mod search;
 pub mod task_inventory;
 pub mod task_store;
 pub mod telemetry_snapshot;
+#[cfg(not(target_family = "wasm"))]
 pub mod terminals;
 pub mod toolchain_store;
 pub mod trusted_worktrees;
@@ -70,10 +71,7 @@ use debugger::{
 
 pub use environment::ProjectEnvironment;
 
-use futures::{
-    StreamExt,
-    future::try_join_all,
-};
+use futures::{StreamExt, future::try_join_all};
 pub use image_store::{ImageItem, ImageStore};
 use image_store::{ImageItemEvent, ImageStoreEvent};
 
@@ -126,6 +124,7 @@ use std::{
 };
 
 use task_store::TaskStore;
+#[cfg(not(target_family = "wasm"))]
 use terminals::Terminals;
 use text::{Anchor, BufferId, Point, Rope};
 use toolchain_store::EmptyToolchainStore;
@@ -175,7 +174,10 @@ impl Default for LocalProjectFlags {
     fn default() -> Self {
         Self {
             init_worktree_trust: true,
+            #[cfg(not(target_family = "wasm"))]
             watch_global_configs: true,
+            #[cfg(target_family = "wasm")]
+            watch_global_configs: false,
         }
     }
 }
@@ -236,6 +238,7 @@ pub struct Project {
     buffers_needing_diff: HashSet<WeakEntity<Buffer>>,
     git_diff_debouncer: DebouncedDelay<Self>,
     remotely_created_models: Arc<Mutex<RemotelyCreatedModels>>,
+    #[cfg(not(target_family = "wasm"))]
     terminals: Terminals,
     node: Option<NodeRuntime>,
     search_history: SearchHistory,
@@ -1107,20 +1110,19 @@ impl DirectoryLister {
             DirectoryLister::Local(_, fs) => {
                 let fs = fs.clone();
                 cx.background_spawn(async move {
-                    let mut results = vec![];
                     let expanded = shellexpand::tilde(&path);
                     let query = Path::new(expanded.as_ref());
-                    let mut response = fs.read_dir(query).await?;
-                    while let Some(path) = response.next().await {
-                        let path = path?;
-                        if let Some(file_name) = path.file_name() {
-                            results.push(DirectoryItem {
-                                path: PathBuf::from(file_name.to_os_string()),
-                                is_dir: fs.is_dir(&path).await,
-                            });
-                        }
-                    }
-                    Ok(results)
+                    Ok(fs
+                        .read_dir_with_types(query)
+                        .await?
+                        .into_iter()
+                        .filter_map(|(path, is_dir)| {
+                            path.file_name().map(|file_name| DirectoryItem {
+                                path: PathBuf::from(file_name),
+                                is_dir,
+                            })
+                        })
+                        .collect())
                 })
             }
         }
@@ -1248,6 +1250,7 @@ impl Project {
             cx.subscribe(&image_store, Self::on_image_store_event)
                 .detach();
 
+            #[cfg(not(target_family = "wasm"))]
             let prettier_store = cx.new(|cx| {
                 PrettierStore::new(
                     node.clone(),
@@ -1292,6 +1295,7 @@ impl Project {
             cx.subscribe(&settings_observer, Self::on_settings_observer_event)
                 .detach();
 
+            #[cfg(not(target_family = "wasm"))]
             let lsp_store = cx.new(|cx| {
                 LspStore::new_local(
                     buffer_store.clone(),
@@ -1307,6 +1311,16 @@ impl Project {
                     languages.clone(),
                     client.http_client(),
                     fs.clone(),
+                    cx,
+                )
+            });
+
+            #[cfg(target_family = "wasm")]
+            let lsp_store = cx.new(|cx| {
+                LspStore::new_without_server(
+                    buffer_store.clone(),
+                    worktree_store.clone(),
+                    languages.clone(),
                     cx,
                 )
             });
@@ -1338,6 +1352,7 @@ impl Project {
 
                 buffers_needing_diff: Default::default(),
                 git_diff_debouncer: DebouncedDelay::new(),
+                #[cfg(not(target_family = "wasm"))]
                 terminals: Terminals {
                     local_handles: Vec::new(),
                 },
@@ -1554,6 +1569,7 @@ impl Project {
                 remote_client: Some(remote.clone()),
                 buffers_needing_diff: Default::default(),
                 git_diff_debouncer: DebouncedDelay::new(),
+                #[cfg(not(target_family = "wasm"))]
                 terminals: Terminals {
                     local_handles: Vec::new(),
                 },
@@ -1600,9 +1616,12 @@ impl Project {
             WorktreeStore::init_remote(&remote_proto);
             LspStore::init(&remote_proto);
             SettingsObserver::init(&remote_proto);
-            TaskStore::init(Some(&remote_proto));
-            ToolchainStore::init(&remote_proto);
-            DapStore::init(&remote_proto, cx);
+            #[cfg(not(target_family = "wasm"))]
+            {
+                TaskStore::init(Some(&remote_proto));
+                ToolchainStore::init(&remote_proto);
+                DapStore::init(&remote_proto, cx);
+            }
             BreakpointStore::init(&remote_proto);
             GitStore::init(&remote_proto);
 
@@ -1652,7 +1671,6 @@ impl Project {
             Project::local(
                 client,
                 node_runtime::NodeRuntime::unavailable(),
-
                 Arc::new(languages),
                 fs,
                 None,
@@ -1712,7 +1730,6 @@ impl Project {
             Project::local(
                 client,
                 node_runtime::NodeRuntime::unavailable(),
-
                 Arc::new(languages),
                 fs,
                 None,
@@ -1901,7 +1918,7 @@ impl Project {
 
     #[inline]
     pub fn supports_terminal(&self, _cx: &App) -> bool {
-        self.is_local() || self.is_via_remote_server()
+        cfg!(not(target_family = "wasm")) && (self.is_local() || self.is_via_remote_server())
     }
 
     #[inline]
@@ -2478,9 +2495,7 @@ impl Project {
     #[inline]
     pub fn is_local(&self) -> bool {
         match &self.client_state {
-            ProjectClientState::Local => {
-                self.remote_client.is_none()
-            }
+            ProjectClientState::Local => self.remote_client.is_none(),
             #[cfg(any(test, feature = "test-support"))]
             ProjectClientState::Collab { .. } => false,
         }
@@ -2490,9 +2505,7 @@ impl Project {
     #[inline]
     pub fn is_via_remote_server(&self) -> bool {
         match &self.client_state {
-            ProjectClientState::Local => {
-                self.remote_client.is_some()
-            }
+            ProjectClientState::Local => self.remote_client.is_some(),
             #[cfg(any(test, feature = "test-support"))]
             ProjectClientState::Collab { .. } => false,
         }
@@ -2826,7 +2839,10 @@ impl Project {
         id: BufferId,
         cx: &mut Context<Self>,
     ) -> Task<Result<Entity<Buffer>>> {
-        Task::ready(self.buffer_for_id(id, cx).with_context(|| format!("buffer {id} does not exist")))
+        Task::ready(
+            self.buffer_for_id(id, cx)
+                .with_context(|| format!("buffer {id} does not exist")),
+        )
     }
 
     pub fn save_buffers(
@@ -3067,59 +3083,57 @@ impl Project {
                 language_server_id,
                 name,
                 message,
-            } => {
-                match message {
-                    proto::update_language_server::Variant::MetadataUpdated(update) => {
-                        self.lsp_store.update(cx, |lsp_store, _| {
-                            if let Some(capabilities) = update.capabilities.as_ref() {
-                                lsp_store.insert_synced_server_capabilities(
-                                    *language_server_id,
-                                    capabilities,
-                                );
+            } => match message {
+                proto::update_language_server::Variant::MetadataUpdated(update) => {
+                    self.lsp_store.update(cx, |lsp_store, _| {
+                        if let Some(capabilities) = update.capabilities.as_ref() {
+                            lsp_store.insert_synced_server_capabilities(
+                                *language_server_id,
+                                capabilities,
+                            );
+                        }
+
+                        if let Some(language_server_status) = lsp_store
+                            .language_server_statuses
+                            .get_mut(language_server_id)
+                        {
+                            if let Some(binary) = &update.binary {
+                                language_server_status.binary = Some(LanguageServerBinary {
+                                    path: PathBuf::from(&binary.path),
+                                    arguments: binary
+                                        .arguments
+                                        .iter()
+                                        .map(OsString::from)
+                                        .collect(),
+                                    env: None,
+                                });
                             }
 
-                            if let Some(language_server_status) = lsp_store
-                                .language_server_statuses
-                                .get_mut(language_server_id)
-                            {
-                                if let Some(binary) = &update.binary {
-                                    language_server_status.binary = Some(LanguageServerBinary {
-                                        path: PathBuf::from(&binary.path),
-                                        arguments: binary
-                                            .arguments
-                                            .iter()
-                                            .map(OsString::from)
-                                            .collect(),
-                                        env: None,
-                                    });
-                                }
+                            language_server_status.configuration = update
+                                .configuration
+                                .as_ref()
+                                .and_then(|config_str| serde_json::from_str(config_str).ok());
 
-                                language_server_status.configuration = update
-                                    .configuration
-                                    .as_ref()
-                                    .and_then(|config_str| serde_json::from_str(config_str).ok());
-
-                                language_server_status.workspace_folders = update
-                                    .workspace_folders
-                                    .iter()
-                                    .filter_map(|uri_str| lsp::Uri::from_str(uri_str).ok())
-                                    .collect();
-                            }
+                            language_server_status.workspace_folders = update
+                                .workspace_folders
+                                .iter()
+                                .filter_map(|uri_str| lsp::Uri::from_str(uri_str).ok())
+                                .collect();
+                        }
+                    });
+                }
+                proto::update_language_server::Variant::RegisteredForBuffer(update) => {
+                    if let Some(buffer_id) = BufferId::new(update.buffer_id).ok() {
+                        cx.emit(Event::LanguageServerBufferRegistered {
+                            buffer_id,
+                            server_id: *language_server_id,
+                            buffer_abs_path: PathBuf::from(&update.buffer_abs_path),
+                            name: name.clone(),
                         });
                     }
-                    proto::update_language_server::Variant::RegisteredForBuffer(update) => {
-                        if let Some(buffer_id) = BufferId::new(update.buffer_id).ok() {
-                            cx.emit(Event::LanguageServerBufferRegistered {
-                                buffer_id,
-                                server_id: *language_server_id,
-                                buffer_abs_path: PathBuf::from(&update.buffer_abs_path),
-                                name: name.clone(),
-                            });
-                        }
-                    }
-                    _ => (),
                 }
-            }
+                _ => (),
+            },
             LspStoreEvent::Notification(message) => cx.emit(Event::Toast {
                 notification_id: "lsp".into(),
                 message: message.clone(),
@@ -3313,7 +3327,6 @@ impl Project {
                         })
                         .ok();
                 }
-
             }
 
             _ => {}
@@ -3439,6 +3452,17 @@ impl Project {
                 lsp_store.stop_language_servers_for_buffers(buffers, also_restart_servers, cx)
             })
             .detach_and_log_err(cx);
+    }
+
+    pub fn stop_all_language_servers(&mut self, cx: &mut Context<Self>) {
+        self.lsp_store
+            .update(cx, |lsp_store, cx| lsp_store.stop_all_language_servers(cx));
+    }
+
+    pub fn restart_all_language_servers(&mut self, cx: &mut Context<Self>) {
+        self.lsp_store.update(cx, |lsp_store, cx| {
+            lsp_store.restart_all_language_servers(cx)
+        });
     }
 
     pub fn cancel_language_server_work_for_buffers(
@@ -4093,9 +4117,10 @@ impl Project {
     }
 
     fn search_impl(&mut self, query: SearchQuery, cx: &mut Context<Self>) -> SearchResultsHandle {
-        let client = self.remote_client.as_ref().map(|remote| {
-            (remote.read(cx).proto_client(), REMOTE_SERVER_PROJECT_ID)
-        });
+        let client = self
+            .remote_client
+            .as_ref()
+            .map(|remote| (remote.read(cx).proto_client(), REMOTE_SERVER_PROJECT_ID));
         let searcher = if query.is_opened_only() {
             project_search::Search::open_buffers_only(
                 self.buffer_store.clone(),
@@ -4185,10 +4210,8 @@ impl Project {
         cx: &App,
     ) -> impl Future<Output = Result<PathBuf>> + use<> {
         let fut = if cfg!(windows)
-            && let (
-                ProjectClientState::Local,
-                Some(remote_client),
-            ) = (&self.client_state, &self.remote_client)
+            && let (ProjectClientState::Local, Some(remote_client)) =
+                (&self.client_state, &self.remote_client)
             && let RemoteConnectionOptions::Wsl(wsl) = remote_client.read(cx).connection_options()
         {
             Either::Left(wsl.abs_windows_path_to_wsl_path(abs_path))

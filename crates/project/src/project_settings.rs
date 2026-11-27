@@ -1391,6 +1391,7 @@ impl SettingsObserver {
     ) -> Task<()> {
         let (mut user_tasks_file_rx, watcher_task) =
             watch_config_file(cx.background_executor(), fs, file_path.clone());
+        #[cfg(not(target_family = "wasm"))]
         let user_tasks_content = cx.foreground_executor().block_on(user_tasks_file_rx.next());
         cx.spawn(async move |settings_observer, cx| {
             let _watcher_task = watcher_task;
@@ -1399,8 +1400,11 @@ impl SettingsObserver {
             }) else {
                 return;
             };
+            #[cfg(not(target_family = "wasm"))]
             let mut user_tasks_contents =
                 futures::stream::iter(user_tasks_content).chain(user_tasks_file_rx);
+            #[cfg(target_family = "wasm")]
+            let mut user_tasks_contents = user_tasks_file_rx;
             while let Some(user_tasks_content) = user_tasks_contents.next().await {
                 let Ok(result) = task_store.update(cx, |task_store, cx| {
                     task_store.update_user_tasks(
@@ -1431,6 +1435,7 @@ impl SettingsObserver {
     ) -> Task<()> {
         let (mut user_tasks_file_rx, watcher_task) =
             watch_config_file(cx.background_executor(), fs, file_path.clone());
+        #[cfg(not(target_family = "wasm"))]
         let user_tasks_content = cx.foreground_executor().block_on(user_tasks_file_rx.next());
         cx.spawn(async move |settings_observer, cx| {
             let _watcher_task = watcher_task;
@@ -1439,8 +1444,11 @@ impl SettingsObserver {
             }) else {
                 return;
             };
+            #[cfg(not(target_family = "wasm"))]
             let mut user_tasks_contents =
                 futures::stream::iter(user_tasks_content).chain(user_tasks_file_rx);
+            #[cfg(target_family = "wasm")]
+            let mut user_tasks_contents = user_tasks_file_rx;
             while let Some(user_tasks_content) = user_tasks_contents.next().await {
                 let Ok(result) = task_store.update(cx, |task_store, cx| {
                     task_store.update_user_debug_scenarios(

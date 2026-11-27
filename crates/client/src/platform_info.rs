@@ -27,6 +27,10 @@ pub fn os_name(cx: &App) -> String {
     {
         "Windows".to_string()
     }
+    #[cfg(target_family = "wasm")]
+    {
+        "Web".to_string()
+    }
 }
 
 /// Returns the OS name, guessing the display server from the environment.
@@ -50,6 +54,10 @@ pub fn guessed_os_name() -> String {
     #[cfg(target_os = "windows")]
     {
         "Windows".to_string()
+    }
+    #[cfg(target_family = "wasm")]
+    {
+        "Web".to_string()
     }
 }
 
@@ -92,6 +100,7 @@ pub fn os_version() -> String {
            };
            util::parse_os_release(&content).unwrap_or_else(|| "unknown".to_string())
        }
+       target_family = "wasm" => "unknown".to_string(),
        target_os = "windows" => {
            let mut info = unsafe { std::mem::zeroed() };
            let status = unsafe { windows::Wdk::System::SystemServices::RtlGetVersion(&mut info) };

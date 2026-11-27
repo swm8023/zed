@@ -10,8 +10,9 @@ autoexamples = false
 workspace = true
 
 [features]
-default = ["multithreaded"]
+default = ["multithreaded", "webgl"]
 multithreaded = ["dep:wasm_thread", "scheduler/wasm-threads"]
+webgl = ["gpui_wgpu/webgl"]
 
 [lib]
 path = "src/gpui_web.rs"

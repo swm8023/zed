@@ -167,7 +167,9 @@ impl Editor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.mode().is_full()
+        // Running tasks requires a terminal, which the browser editor does not initialize.
+        if cfg!(target_family = "wasm")
+            || !self.mode().is_full()
             || !EditorSettings::get_global(cx).gutter.runnables
             || !self.enable_runnables
         {

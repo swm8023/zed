@@ -101,18 +101,22 @@ impl Editor {
             let task = cx.background_spawn(resolve_indented_range(snapshot, cursor_row));
 
             // Try to resolve the indent in a short amount of time, otherwise move it to a background task.
-            match cx
+            #[cfg(not(target_family = "wasm"))]
+            let resolved = cx
                 .foreground_executor()
-                .block_with_timeout(Duration::from_micros(200), task)
-            {
+                .block_with_timeout(Duration::from_micros(200), task);
+            #[cfg(target_family = "wasm")]
+            let resolved = Err(task);
+            match resolved {
                 Ok(result) => state.active_indent_range = result,
                 Err(future) => {
                     state.pending_refresh = Some(cx.spawn_in(window, async move |editor, cx| {
                         let result = cx.background_spawn(future).await;
                         editor
-                            .update(cx, |editor, _| {
+                            .update(cx, |editor, cx| {
                                 editor.active_indent_guides_state.active_indent_range = result;
                                 editor.active_indent_guides_state.pending_refresh = None;
+                                cx.notify();
                             })
                             .log_err();
                     }));

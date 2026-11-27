@@ -271,6 +271,7 @@ async fn extract_tar_bz2(
     Ok(())
 }
 
+#[cfg(not(target_family = "wasm"))]
 async fn unpack_tar_archive(
     destination_path: &Path,
     url: &str,
@@ -287,6 +288,15 @@ async fn unpack_tar_archive(
         .await
         .with_context(|| format!("extracting {url} to {destination_path:?}"))?;
     Ok(())
+}
+
+#[cfg(target_family = "wasm")]
+async fn unpack_tar_archive(
+    _destination_path: &Path,
+    _url: &str,
+    _archive_bytes: impl AsyncRead + Unpin,
+) -> Result<(), anyhow::Error> {
+    anyhow::bail!("Archive extraction requires the native filesystem")
 }
 
 async fn extract_gz(

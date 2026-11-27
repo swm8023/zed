@@ -60,6 +60,169 @@ use self::model::{DockStructure, SerializedWorkspaceLocation, SessionWorkspace};
 // > which defaults to <..> 32766 for SQLite versions after 3.32.0.
 const MAX_QUERY_PLACEHOLDERS: usize = 32000;
 
+fn workspace_for_roots_query() -> &'static str {
+    sql!(
+        SELECT
+            workspace_id,
+            paths,
+            paths_order,
+            identity_paths,
+            identity_paths_order,
+            window_state,
+            window_x,
+            window_y,
+            window_width,
+            window_height,
+            display,
+            centered_layout,
+            left_dock_visible,
+            left_dock_active_panel,
+            left_dock_zoom,
+            right_dock_visible,
+            right_dock_active_panel,
+            right_dock_zoom,
+            bottom_dock_visible,
+            bottom_dock_active_panel,
+            bottom_dock_zoom,
+            window_id
+        FROM workspaces
+        WHERE
+            paths IS ? AND
+            remote_connection_id IS ?
+        LIMIT 1
+    )
+}
+
+fn pane_group_query() -> &'static str {
+    sql!(
+        SELECT group_id, axis, pane_id, active, pinned_count, flexes
+            FROM (SELECT
+                    group_id,
+                    axis,
+                    NULL as pane_id,
+                    NULL as active,
+                    NULL as pinned_count,
+                    position,
+                    parent_group_id,
+                    workspace_id,
+                    flexes
+                  FROM pane_groups
+                UNION
+                  SELECT
+                    NULL,
+                    NULL,
+                    center_panes.pane_id,
+                    panes.active as active,
+                    pinned_count,
+                    position,
+                    parent_group_id,
+                    panes.workspace_id as workspace_id,
+                    NULL
+                  FROM center_panes
+                  JOIN panes ON center_panes.pane_id = panes.pane_id)
+            WHERE parent_group_id IS ? AND workspace_id = ?
+            ORDER BY position
+    )
+}
+
+fn pane_items_query() -> &'static str {
+    sql!(
+        SELECT kind, item_id, active, preview FROM items
+        WHERE pane_id = ?
+            ORDER BY position
+    )
+}
+
+fn bookmarks_query() -> &'static str {
+    sql!(
+        SELECT path, row, label
+        FROM bookmarks
+        WHERE workspace_id = ?
+        ORDER BY path, row
+    )
+}
+
+fn breakpoints_query() -> &'static str {
+    sql!(
+        SELECT path, breakpoint_location, log_message, condition, hit_condition, state
+        FROM breakpoints
+        WHERE workspace_id = ?
+    )
+}
+
+fn user_toolchains_query() -> &'static str {
+    sql!(
+        SELECT workspace_id, worktree_root_path, relative_worktree_path,
+        language_name, name, path, raw_json
+        FROM user_toolchains WHERE remote_connection_id IS ?1 AND (
+              workspace_id IN (0, ?2)
+        )
+    )
+}
+
+fn toolchains_query() -> &'static str {
+    sql!(
+        SELECT
+            name, path, worktree_root_path, relative_worktree_path, language_name, raw_json
+        FROM toolchains
+        WHERE workspace_id = ?
+    )
+}
+
+#[cfg(target_family = "wasm")]
+fn sql_cell_i64(cell: &sqlez::remote_sql::SqlCell) -> Option<i64> {
+    use sqlez::remote_sql::SqlCell;
+
+    match cell {
+        SqlCell::Int(value) => Some(*value),
+        SqlCell::Float(value) => Some(*value as i64),
+        SqlCell::Text(value) => value.parse().ok(),
+        SqlCell::Null | SqlCell::Blob(_) => None,
+    }
+}
+
+#[cfg(target_family = "wasm")]
+async fn prefetch_workspace_pane_tree(workspace_id: i64) -> Result<()> {
+    use sqlez::remote_sql::{SqlParam, prefetch_query, prefetch_query_result};
+
+    let mut parent_group_ids = vec![None];
+    while !parent_group_ids.is_empty() {
+        let group_queries = parent_group_ids
+            .drain(..)
+            .map(|parent_group_id| {
+                let params = [
+                    parent_group_id
+                        .map(SqlParam::int)
+                        .unwrap_or_else(SqlParam::null),
+                    SqlParam::int(workspace_id),
+                ];
+                async move { prefetch_query_result(pane_group_query(), &params).await }
+            })
+            .collect::<Vec<_>>();
+        let group_results = futures::future::try_join_all(group_queries).await?;
+
+        let mut pane_ids = Vec::new();
+        for result in group_results {
+            for row in result.rows {
+                if let Some(group_id) = row.first().and_then(sql_cell_i64) {
+                    parent_group_ids.push(Some(group_id));
+                }
+                if let Some(pane_id) = row.get(2).and_then(sql_cell_i64) {
+                    pane_ids.push(pane_id);
+                }
+            }
+        }
+
+        futures::future::try_join_all(pane_ids.into_iter().map(|pane_id| {
+            let params = [SqlParam::int(pane_id)];
+            async move { prefetch_query(pane_items_query(), &params).await }
+        }))
+        .await?;
+    }
+
+    Ok(())
+}
+
 fn parse_timestamp(text: &str) -> DateTime<Utc> {
     NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M:%S")
         .map(|naive| naive.and_utc())
@@ -316,6 +479,24 @@ pub async fn write_multi_workspace_state(
     state: model::MultiWorkspaceState,
 ) {
     if let Ok(json_str) = serde_json::to_string(&state) {
+        #[cfg(target_family = "wasm")]
+        {
+            let _ = kvp;
+            use sqlez::remote_sql::{SqlParam, execute_async};
+
+            execute_async(
+                "INSERT OR REPLACE INTO scoped_kv_store(namespace, key, value) VALUES ((?), (?), (?))",
+                &[
+                    SqlParam::text("multi_workspace_state"),
+                    SqlParam::text(window_id.as_u64().to_string()),
+                    SqlParam::text(json_str),
+                ],
+            )
+            .await
+            .log_err();
+        }
+
+        #[cfg(not(target_family = "wasm"))]
         kvp.scoped("multi_workspace_state")
             .write(window_id.as_u64().to_string(), json_str)
             .await
@@ -1135,36 +1316,7 @@ impl WorkspaceDb {
             DockStructure,
             Option<u64>,
         ) = self
-            .select_row_bound(sql! {
-                SELECT
-                    workspace_id,
-                    paths,
-                    paths_order,
-                    identity_paths,
-                    identity_paths_order,
-                    window_state,
-                    window_x,
-                    window_y,
-                    window_width,
-                    window_height,
-                    display,
-                    centered_layout,
-                    left_dock_visible,
-                    left_dock_active_panel,
-                    left_dock_zoom,
-                    right_dock_visible,
-                    right_dock_active_panel,
-                    right_dock_zoom,
-                    bottom_dock_visible,
-                    bottom_dock_active_panel,
-                    bottom_dock_zoom,
-                    window_id
-                FROM workspaces
-                WHERE
-                    paths IS ? AND
-                    remote_connection_id IS ?
-                LIMIT 1
-            })
+            .select_row_bound(workspace_for_roots_query())
             .and_then(|mut prepared_statement| {
                 (prepared_statement)((
                     root_paths.serialize().paths,
@@ -1217,6 +1369,50 @@ impl WorkspaceDb {
             user_toolchains: self.user_toolchains(workspace_id, remote_connection_id),
             recent_navigation_history: self.recent_navigation_history(workspace_id),
         })
+    }
+
+    /// Prefetch all local workspace metadata over the asynchronous RPC
+    /// transport. `workspace_for_roots` and item deserializers can then use
+    /// their existing synchronous sqlez APIs without blocking the WASM UI.
+    #[cfg(target_family = "wasm")]
+    pub(crate) async fn prefetch_workspace_for_roots<P: AsRef<Path>>(
+        &self,
+        worktree_roots: &[P],
+    ) -> Result<()> {
+        use sqlez::remote_sql::{SqlParam, prefetch_query, prefetch_query_result};
+
+        let root_paths = PathList::new(worktree_roots);
+        if root_paths.is_empty() {
+            return Ok(());
+        }
+
+        let params = [
+            SqlParam::text(root_paths.serialize().paths),
+            SqlParam::null(),
+        ];
+        let workspace = prefetch_query_result(workspace_for_roots_query(), &params).await?;
+        let Some(workspace_id) = workspace
+            .rows
+            .first()
+            .and_then(|row| row.first())
+            .and_then(sql_cell_i64)
+        else {
+            return Ok(());
+        };
+
+        let workspace_id_param = SqlParam::int(workspace_id);
+        let bookmarks_params = [workspace_id_param.clone()];
+        let breakpoints_params = [workspace_id_param.clone()];
+        let user_toolchains_params = [SqlParam::null(), workspace_id_param.clone()];
+        let toolchains_params = [workspace_id_param];
+        futures::try_join!(
+            prefetch_workspace_pane_tree(workspace_id),
+            prefetch_query(bookmarks_query(), &bookmarks_params),
+            prefetch_query(breakpoints_query(), &breakpoints_params),
+            prefetch_query(user_toolchains_query(), &user_toolchains_params),
+            prefetch_query(toolchains_query(), &toolchains_params),
+        )?;
+        Ok(())
     }
 
     /// Returns the workspace with the given ID, loading all associated data.
@@ -1339,12 +1535,7 @@ impl WorkspaceDb {
 
     fn bookmarks(&self, workspace_id: WorkspaceId) -> BTreeMap<Arc<Path>, Vec<SerializedBookmark>> {
         let bookmarks: Result<Vec<(PathBuf, Bookmark)>> = self
-            .select_bound(sql! {
-                SELECT path, row, label
-                FROM bookmarks
-                WHERE workspace_id = ?
-                ORDER BY path, row
-            })
+            .select_bound(bookmarks_query())
             .and_then(|mut prepared_statement| (prepared_statement)(workspace_id));
 
         match bookmarks {
@@ -1376,11 +1567,7 @@ impl WorkspaceDb {
 
     fn breakpoints(&self, workspace_id: WorkspaceId) -> BTreeMap<Arc<Path>, Vec<SourceBreakpoint>> {
         let breakpoints: Result<Vec<(PathBuf, Breakpoint)>> = self
-            .select_bound(sql! {
-                SELECT path, breakpoint_location, log_message, condition, hit_condition, state
-                FROM breakpoints
-                WHERE workspace_id = ?
-            })
+            .select_bound(breakpoints_query())
             .and_then(|mut prepared_statement| (prepared_statement)(workspace_id));
 
         match breakpoints {
@@ -1428,13 +1615,7 @@ impl WorkspaceDb {
         type RowKind = (WorkspaceId, String, String, String, String, String, String);
 
         let toolchains: Vec<RowKind> = self
-            .select_bound(sql! {
-                SELECT workspace_id, worktree_root_path, relative_worktree_path,
-                language_name, name, path, raw_json
-                FROM user_toolchains WHERE remote_connection_id IS ?1 AND (
-                      workspace_id IN (0, ?2)
-                )
-            })
+            .select_bound(user_toolchains_query())
             .and_then(|mut statement| {
                 (statement)((remote_connection_id.map(|id| id.0), workspace_id))
             })
@@ -1494,6 +1675,12 @@ impl WorkspaceDb {
     }
 
     pub(crate) async fn save_workspace(&self, workspace: SerializedWorkspace) {
+        #[cfg(target_family = "wasm")]
+        if matches!(workspace.location, SerializedWorkspaceLocation::Local) {
+            self.save_workspace_web(workspace).await.log_err();
+            return;
+        }
+
         let paths = workspace.paths.serialize();
         let identity_paths = workspace.identity_paths.map(|paths| paths.serialize());
         log::debug!("Saving workspace at location: {:?}", workspace.location);
@@ -1688,6 +1875,261 @@ impl WorkspaceDb {
         .await;
     }
 
+    #[cfg(target_family = "wasm")]
+    async fn save_workspace_web(&self, workspace: SerializedWorkspace) -> Result<()> {
+        use sqlez::remote_sql::{SqlBatchParam, SqlBatchQuery, SqlParam, execute_batch_async};
+
+        fn text(value: impl Into<String>) -> SqlParam {
+            SqlParam::text(value)
+        }
+
+        fn optional_text(value: Option<impl Into<String>>) -> SqlParam {
+            value.map(text).unwrap_or_else(SqlParam::null)
+        }
+
+        fn optional_i64(value: Option<i64>) -> SqlParam {
+            value.map(SqlParam::int).unwrap_or_else(SqlParam::null)
+        }
+
+        fn push_pane_group(
+            queries: &mut Vec<SqlBatchQuery>,
+            workspace_id: i64,
+            pane_group: &SerializedPaneGroup,
+            parent: Option<(usize, usize)>,
+        ) {
+            match pane_group {
+                SerializedPaneGroup::Group {
+                    axis,
+                    children,
+                    flexes,
+                } => {
+                    let parent_id = parent
+                        .map(|(query, _)| SqlBatchParam::last_rowid(query))
+                        .unwrap_or_else(|| SqlParam::null().into());
+                    let position = parent
+                        .map(|(_, position)| SqlParam::int(position as i64).into())
+                        .unwrap_or_else(|| SqlParam::null().into());
+                    let axis = match axis.0 {
+                        Axis::Horizontal => "Horizontal",
+                        Axis::Vertical => "Vertical",
+                    };
+                    let group_query = queries.len();
+                    queries.push(SqlBatchQuery::with_params(
+                        "INSERT INTO pane_groups(
+                            workspace_id, parent_group_id, position, axis, flexes
+                         ) VALUES (?, ?, ?, ?, ?)",
+                        vec![
+                            SqlParam::int(workspace_id).into(),
+                            parent_id,
+                            position,
+                            text(axis).into(),
+                            optional_text(
+                                flexes
+                                    .as_ref()
+                                    .map(|flexes| serde_json::json!(flexes).to_string()),
+                            )
+                            .into(),
+                        ],
+                    ));
+                    for (position, child) in children.iter().enumerate() {
+                        push_pane_group(
+                            queries,
+                            workspace_id,
+                            child,
+                            Some((group_query, position)),
+                        );
+                    }
+                }
+                SerializedPaneGroup::Pane(pane) => {
+                    let pane_query = queries.len();
+                    queries.push(SqlBatchQuery::new(
+                        "INSERT INTO panes(workspace_id, active, pinned_count)
+                         VALUES (?, ?, ?)",
+                        vec![
+                            SqlParam::int(workspace_id),
+                            SqlParam::int(i64::from(pane.active)),
+                            SqlParam::int(pane.pinned_count as i64),
+                        ],
+                    ));
+
+                    let parent_id = parent
+                        .map(|(query, _)| SqlBatchParam::last_rowid(query))
+                        .unwrap_or_else(|| SqlParam::null().into());
+                    let position = parent
+                        .map(|(_, position)| SqlParam::int(position as i64).into())
+                        .unwrap_or_else(|| SqlParam::null().into());
+                    queries.push(SqlBatchQuery::with_params(
+                        "INSERT INTO center_panes(pane_id, parent_group_id, position)
+                         VALUES (?, ?, ?)",
+                        vec![SqlBatchParam::last_rowid(pane_query), parent_id, position],
+                    ));
+
+                    for (position, item) in pane.children.iter().enumerate() {
+                        queries.push(SqlBatchQuery::with_params(
+                            "INSERT INTO items(
+                                workspace_id, pane_id, position, kind, item_id, active, preview
+                             ) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            vec![
+                                SqlParam::int(workspace_id).into(),
+                                SqlBatchParam::last_rowid(pane_query),
+                                SqlParam::int(position as i64).into(),
+                                text(item.kind.as_ref()).into(),
+                                SqlParam::int(item.item_id as i64).into(),
+                                SqlParam::int(i64::from(item.active)).into(),
+                                SqlParam::int(i64::from(item.preview)).into(),
+                            ],
+                        ));
+                    }
+                }
+            }
+        }
+
+        let workspace_id = i64::from(workspace.id);
+        let paths = workspace.paths.serialize();
+        let identity_paths = workspace.identity_paths.map(|paths| paths.serialize());
+        let mut queries = vec![
+            SqlBatchQuery::new(
+                "DELETE FROM pane_groups WHERE workspace_id = ?1;
+                 DELETE FROM panes WHERE workspace_id = ?1;",
+                vec![SqlParam::int(workspace_id)],
+            ),
+            SqlBatchQuery::new(
+                "DELETE FROM bookmarks WHERE workspace_id = ?1",
+                vec![SqlParam::int(workspace_id)],
+            ),
+        ];
+
+        for (path, bookmarks) in workspace.bookmarks {
+            for bookmark in bookmarks {
+                queries.push(SqlBatchQuery::new(
+                    "INSERT INTO bookmarks(workspace_id, path, row, label)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    vec![
+                        SqlParam::int(workspace_id),
+                        text(path.to_string_lossy()),
+                        SqlParam::int(bookmark.row as i64),
+                        text(bookmark.label),
+                    ],
+                ));
+            }
+        }
+
+        queries.push(SqlBatchQuery::new(
+            "DELETE FROM breakpoints WHERE workspace_id = ?1",
+            vec![SqlParam::int(workspace_id)],
+        ));
+        for (path, breakpoints) in workspace.breakpoints {
+            for breakpoint in breakpoints {
+                queries.push(SqlBatchQuery::new(
+                    "INSERT INTO breakpoints(
+                        workspace_id, path, breakpoint_location, log_message,
+                        condition, hit_condition, state
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    vec![
+                        SqlParam::int(workspace_id),
+                        text(path.to_string_lossy()),
+                        SqlParam::int(breakpoint.row as i64),
+                        optional_text(breakpoint.message.map(|value| value.to_string())),
+                        optional_text(breakpoint.condition.map(|value| value.to_string())),
+                        optional_text(breakpoint.hit_condition.map(|value| value.to_string())),
+                        SqlParam::int(breakpoint.state.to_int() as i64),
+                    ],
+                ));
+            }
+        }
+
+        queries.push(SqlBatchQuery::new(
+            "DELETE FROM user_toolchains WHERE workspace_id = ?1",
+            vec![SqlParam::int(workspace_id)],
+        ));
+        for (scope, toolchains) in workspace.user_toolchains {
+            for toolchain in toolchains {
+                let (toolchain_workspace_id, worktree_root_path, relative_worktree_path) =
+                    match &scope {
+                        ToolchainScope::Subproject(worktree_root_path, path) => (
+                            workspace_id,
+                            Some(worktree_root_path.to_string_lossy().into_owned()),
+                            Some(path.as_unix_str().to_owned()),
+                        ),
+                        ToolchainScope::Project => (workspace_id, None, None),
+                        ToolchainScope::Global => (0, None, None),
+                    };
+                queries.push(SqlBatchQuery::new(
+                    "INSERT OR REPLACE INTO user_toolchains(
+                        remote_connection_id, workspace_id, worktree_root_path,
+                        relative_worktree_path, language_name, name, path, raw_json
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    vec![
+                        SqlParam::null(),
+                        SqlParam::int(toolchain_workspace_id),
+                        text(worktree_root_path.unwrap_or_default()),
+                        text(relative_worktree_path.unwrap_or_default()),
+                        text(toolchain.language_name.as_ref()),
+                        text(toolchain.name.to_string()),
+                        text(toolchain.path.to_string()),
+                        text(toolchain.as_json.to_string()),
+                    ],
+                ));
+            }
+        }
+
+        if !paths.paths.is_empty() {
+            queries.push(SqlBatchQuery::new(
+                "DELETE FROM workspaces
+                 WHERE workspace_id != ?1 AND paths IS ?2 AND remote_connection_id IS ?3",
+                vec![
+                    SqlParam::int(workspace_id),
+                    text(paths.paths.clone()),
+                    SqlParam::null(),
+                ],
+            ));
+        }
+
+        queries.push(SqlBatchQuery::new(
+            "INSERT INTO workspaces(
+                workspace_id, paths, paths_order, identity_paths, identity_paths_order,
+                remote_connection_id, left_dock_visible, left_dock_active_panel,
+                left_dock_zoom, right_dock_visible, right_dock_active_panel,
+                right_dock_zoom, bottom_dock_visible, bottom_dock_active_panel,
+                bottom_dock_zoom, session_id, window_id, timestamp
+             ) VALUES (
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                ?13, ?14, ?15, ?16, ?17, CURRENT_TIMESTAMP
+             )
+             ON CONFLICT DO UPDATE SET
+                paths = ?2, paths_order = ?3, identity_paths = ?4,
+                identity_paths_order = ?5, remote_connection_id = ?6,
+                left_dock_visible = ?7, left_dock_active_panel = ?8,
+                left_dock_zoom = ?9, right_dock_visible = ?10,
+                right_dock_active_panel = ?11, right_dock_zoom = ?12,
+                bottom_dock_visible = ?13, bottom_dock_active_panel = ?14,
+                bottom_dock_zoom = ?15, session_id = ?16, window_id = ?17,
+                timestamp = CURRENT_TIMESTAMP",
+            vec![
+                SqlParam::int(workspace_id),
+                text(paths.paths),
+                text(paths.order),
+                optional_text(identity_paths.as_ref().map(|paths| paths.paths.clone())),
+                optional_text(identity_paths.as_ref().map(|paths| paths.order.clone())),
+                SqlParam::null(),
+                SqlParam::int(i64::from(workspace.docks.left.visible)),
+                optional_text(workspace.docks.left.active_panel),
+                SqlParam::int(i64::from(workspace.docks.left.zoom)),
+                SqlParam::int(i64::from(workspace.docks.right.visible)),
+                optional_text(workspace.docks.right.active_panel),
+                SqlParam::int(i64::from(workspace.docks.right.zoom)),
+                SqlParam::int(i64::from(workspace.docks.bottom.visible)),
+                optional_text(workspace.docks.bottom.active_panel),
+                SqlParam::int(i64::from(workspace.docks.bottom.zoom)),
+                optional_text(workspace.session_id),
+                optional_i64(workspace.window_id.map(|value| value as i64)),
+            ],
+        ));
+
+        push_pane_group(&mut queries, workspace_id, &workspace.center_group, None);
+        execute_batch_async(queries).await
+    }
+
     pub(crate) async fn get_or_create_remote_connection(
         &self,
         options: RemoteConnectionOptions,
@@ -1754,13 +2196,8 @@ impl WorkspaceDb {
                 user IS ? AND
                 distro IS ?
             LIMIT 1
-        ))?((
-            kind.serialize(),
-            host,
-            port,
-            user,
-            distro,
-        ))? {
+        ))?((kind.serialize(), host, port, user, distro))?
+        {
             Ok(RemoteConnectionId(id))
         } else {
             let id = this.select_row_bound(sql!(
@@ -1772,13 +2209,7 @@ impl WorkspaceDb {
                     distro
                 ) VALUES (?1, ?2, ?3, ?4, ?5)
                 RETURNING id
-            ))?((
-                kind.serialize(),
-                host,
-                port,
-                user,
-                distro,
-            ))?
+            ))?((kind.serialize(), host, port, user, distro))?
             .context("failed to insert remote project")?;
             Ok(RemoteConnectionId(id))
         }
@@ -1911,42 +2342,54 @@ impl WorkspaceDb {
                 remote_connections
         ))?()?
         .into_iter()
-        .filter_map(
-            |(id, kind, host, port, user, distro)| {
-                Some((
-                    RemoteConnectionId(id),
-                    Self::remote_connection_from_row(
-                        kind,
-                        host,
-                        port,
-                        user,
-                        distro,
-                    )?,
-                ))
-            },
-        )
+        .filter_map(|(id, kind, host, port, user, distro)| {
+            Some((
+                RemoteConnectionId(id),
+                Self::remote_connection_from_row(kind, host, port, user, distro)?,
+            ))
+        })
         .collect())
+    }
+
+    /// Seed the synchronous sqlez cache without blocking the browser UI.
+    #[cfg(target_family = "wasm")]
+    pub async fn prefetch_recent_project_queries(&self) -> Result<()> {
+        let remote_connections = sqlez::remote_sql::prefetch_query(
+            sql!(
+                SELECT
+                    id, kind, host, port, user, distro, container_id, name, use_podman, remote_env
+                FROM
+                    remote_connections
+            ),
+            &[],
+        );
+        let recent_workspaces = sqlez::remote_sql::prefetch_query(
+            sql!(
+                SELECT workspace_id, paths, paths_order, identity_paths, identity_paths_order, remote_connection_id, session_id, timestamp
+                FROM workspaces
+                WHERE
+                    paths IS NOT NULL OR
+                    remote_connection_id IS NOT NULL
+                ORDER BY timestamp DESC
+            ),
+            &[],
+        );
+        futures::try_join!(remote_connections, recent_workspaces)?;
+        Ok(())
     }
 
     pub(crate) fn remote_connection(
         &self,
         id: RemoteConnectionId,
     ) -> Result<RemoteConnectionOptions> {
-        let (kind, host, port, user, distro) =
-            self.select_row_bound(sql!(
-                SELECT kind, host, port, user, distro
-                FROM remote_connections
-                WHERE id = ?
-            ))?(id.0)?
-            .context("no such remote connection")?;
-        Self::remote_connection_from_row(
-            kind,
-            host,
-            port,
-            user,
-            distro,
-        )
-        .context("invalid remote_connection row")
+        let (kind, host, port, user, distro) = self.select_row_bound(sql!(
+            SELECT kind, host, port, user, distro
+            FROM remote_connections
+            WHERE id = ?
+        ))?(id.0)?
+        .context("no such remote connection")?;
+        Self::remote_connection_from_row(kind, host, port, user, distro)
+            .context("invalid remote_connection row")
     }
 
     fn remote_connection_from_row(
@@ -2230,65 +2673,37 @@ impl WorkspaceDb {
             Option<usize>,
             Option<String>,
         );
-        self.select_bound::<GroupKey, GroupOrPane>(sql!(
-            SELECT group_id, axis, pane_id, active, pinned_count, flexes
-                FROM (SELECT
-                        group_id,
-                        axis,
-                        NULL as pane_id,
-                        NULL as active,
-                        NULL as pinned_count,
-                        position,
-                        parent_group_id,
-                        workspace_id,
-                        flexes
-                      FROM pane_groups
-                    UNION
-                      SELECT
-                        NULL,
-                        NULL,
-                        center_panes.pane_id,
-                        panes.active as active,
-                        pinned_count,
-                        position,
-                        parent_group_id,
-                        panes.workspace_id as workspace_id,
-                        NULL
-                      FROM center_panes
-                      JOIN panes ON center_panes.pane_id = panes.pane_id)
-                WHERE parent_group_id IS ? AND workspace_id = ?
-                ORDER BY position
-        ))?((group_id, workspace_id))?
-        .into_iter()
-        .map(|(group_id, axis, pane_id, active, pinned_count, flexes)| {
-            let maybe_pane = maybe!({ Some((pane_id?, active?, pinned_count?)) });
-            if let Some((group_id, axis)) = group_id.zip(axis) {
-                let flexes = flexes
-                    .map(|flexes: String| serde_json::from_str::<Vec<f32>>(&flexes))
-                    .transpose()?;
+        self.select_bound::<GroupKey, GroupOrPane>(pane_group_query())?((group_id, workspace_id))?
+            .into_iter()
+            .map(|(group_id, axis, pane_id, active, pinned_count, flexes)| {
+                let maybe_pane = maybe!({ Some((pane_id?, active?, pinned_count?)) });
+                if let Some((group_id, axis)) = group_id.zip(axis) {
+                    let flexes = flexes
+                        .map(|flexes: String| serde_json::from_str::<Vec<f32>>(&flexes))
+                        .transpose()?;
 
-                Ok(SerializedPaneGroup::Group {
-                    axis,
-                    children: self.get_pane_group(workspace_id, Some(group_id))?,
-                    flexes,
-                })
-            } else if let Some((pane_id, active, pinned_count)) = maybe_pane {
-                Ok(SerializedPaneGroup::Pane(SerializedPane::new(
-                    self.get_items(pane_id)?,
-                    active,
-                    pinned_count,
-                )))
-            } else {
-                bail!("Pane Group Child was neither a pane group or a pane");
-            }
-        })
-        // Filter out panes and pane groups which don't have any children or items
-        .filter(|pane_group| match pane_group {
-            Ok(SerializedPaneGroup::Group { children, .. }) => !children.is_empty(),
-            Ok(SerializedPaneGroup::Pane(pane)) => !pane.children.is_empty(),
-            _ => true,
-        })
-        .collect::<Result<_>>()
+                    Ok(SerializedPaneGroup::Group {
+                        axis,
+                        children: self.get_pane_group(workspace_id, Some(group_id))?,
+                        flexes,
+                    })
+                } else if let Some((pane_id, active, pinned_count)) = maybe_pane {
+                    Ok(SerializedPaneGroup::Pane(SerializedPane::new(
+                        self.get_items(pane_id)?,
+                        active,
+                        pinned_count,
+                    )))
+                } else {
+                    bail!("Pane Group Child was neither a pane group or a pane");
+                }
+            })
+            // Filter out panes and pane groups which don't have any children or items
+            .filter(|pane_group| match pane_group {
+                Ok(SerializedPaneGroup::Group { children, .. }) => !children.is_empty(),
+                Ok(SerializedPaneGroup::Pane(pane)) => !pane.children.is_empty(),
+                _ => true,
+            })
+            .collect::<Result<_>>()
     }
 
     fn save_pane_group(
@@ -2369,11 +2784,7 @@ impl WorkspaceDb {
     }
 
     fn get_items(&self, pane_id: PaneId) -> Result<Vec<SerializedItem>> {
-        self.select_bound(sql!(
-            SELECT kind, item_id, active, preview FROM items
-            WHERE pane_id = ?
-                ORDER BY position
-        ))?(pane_id)
+        self.select_bound(pane_items_query())?(pane_id)
     }
 
     fn save_items(
@@ -2451,38 +2862,43 @@ impl WorkspaceDb {
         &self,
         workspace_id: WorkspaceId,
     ) -> Result<Vec<(Toolchain, Arc<Path>, Arc<RelPath>)>> {
-        self.write(move |this| {
-            let mut select = this
-                .select_bound(sql!(
-                    SELECT
-                        name, path, worktree_root_path, relative_worktree_path, language_name, raw_json
-                    FROM toolchains
-                    WHERE workspace_id = ?
-                ))
+        #[cfg(target_family = "wasm")]
+        let toolchain: Vec<(String, String, String, String, String, String)> = {
+            let mut select = self
+                .select_bound(toolchains_query())
                 .context("select toolchains")?;
+            select(workspace_id)?
+        };
 
-            let toolchain: Vec<(String, String, String, String, String, String)> =
-                select(workspace_id)?;
+        #[cfg(not(target_family = "wasm"))]
+        let toolchain: Vec<(String, String, String, String, String, String)> = self
+            .write(move |this| {
+                let mut select = this
+                    .select_bound(toolchains_query())
+                    .context("select toolchains")?;
+                select(workspace_id)
+            })
+            .await?;
 
-            Ok(toolchain
-                .into_iter()
-                .filter_map(
-                    |(name, path, worktree_root_path, relative_worktree_path, language, json)| {
-                        Some((
-                            Toolchain {
-                                name: name.into(),
-                                path: path.into(),
-                                language_name: LanguageName::new(&language),
-                                as_json: serde_json::Value::from_str(&json).ok()?,
-                            },
-                           Arc::from(worktree_root_path.as_ref()),
-                            RelPath::from_unix_str(&relative_worktree_path).log_err()?.into(),
-                        ))
-                    },
-                )
-                .collect())
-        })
-        .await
+        Ok(toolchain
+            .into_iter()
+            .filter_map(
+                |(name, path, worktree_root_path, relative_worktree_path, language, json)| {
+                    Some((
+                        Toolchain {
+                            name: name.into(),
+                            path: path.into(),
+                            language_name: LanguageName::new(&language),
+                            as_json: serde_json::Value::from_str(&json).ok()?,
+                        },
+                        Arc::from(worktree_root_path.as_ref()),
+                        RelPath::from_unix_str(&relative_worktree_path)
+                            .log_err()?
+                            .into(),
+                    ))
+                },
+            )
+            .collect())
     }
 
     pub async fn set_toolchain(
@@ -4286,7 +4702,9 @@ mod tests {
     }
 
     #[gpui::test]
-    async fn legacy_container_workspaces_do_not_block_remote_restore(cx: &mut gpui::TestAppContext) {
+    async fn legacy_container_workspaces_do_not_block_remote_restore(
+        cx: &mut gpui::TestAppContext,
+    ) {
         let db = WorkspaceDb::open_test_db("legacy-container-restore").await;
         let fs = fs::FakeFs::new(cx.executor());
         db.write(|conn| {
@@ -4331,9 +4749,11 @@ mod tests {
             .await
             .unwrap();
         let legacy_workspace = db
-            .select_row_bound::<_, i64>(sql!(SELECT workspace_id FROM workspaces WHERE workspace_id = ?))
+            .select_row_bound::<_, i64>(
+                sql!(SELECT workspace_id FROM workspaces WHERE workspace_id = ?),
+            )
             .unwrap()(1_i64)
-            .unwrap();
+        .unwrap();
         assert_eq!(legacy_workspace, Some(1));
     }
 

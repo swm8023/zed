@@ -38,7 +38,6 @@ gpui.workspace = true
 icons.workspace = true
 path.workspace = true
 project.workspace = true
-recent_projects.workspace = true
 remote.workspace = true
 rpc.workspace = true
 semver.workspace = true
@@ -52,6 +51,9 @@ util.workspace = true
 workspace.workspace = true
 zed_actions.workspace = true
 arrayvec = "0.7.6"
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+recent_projects.workspace = true
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

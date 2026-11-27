@@ -1,4 +1,6 @@
+#[cfg(not(target_family = "wasm"))]
 mod preview;
+#[cfg(not(target_family = "wasm"))]
 mod repl_menu;
 
 use editor::actions::{
@@ -9,14 +11,20 @@ use editor::actions::{
 };
 use editor::code_context_menus::{CodeContextMenu, ContextMenuOrigin};
 use editor::{Editor, EditorSettings};
+#[cfg(not(target_family = "wasm"))]
+use gpui::WeakEntity;
 use gpui::{
     Action, Anchor, AnchoredPositionMode, ClickEvent, Context, ElementId, Entity, EventEmitter,
     FocusHandle, Focusable, InteractiveElement, ParentElement, Render, Styled, Subscription,
-    WeakEntity, Window, anchored, deferred, point,
+    Window, anchored, deferred, point,
 };
-use project::project_settings::{DiagnosticSeverity, ProjectSettings};
+use project::project_settings::DiagnosticSeverity;
+#[cfg(not(target_family = "wasm"))]
+use project::project_settings::ProjectSettings;
 use search::{BufferSearchBar, buffer_search};
-use settings::{GitDiffBaseSetting, Settings, SettingsStore, update_settings_file};
+#[cfg(not(target_family = "wasm"))]
+use settings::{GitDiffBaseSetting, update_settings_file};
+use settings::{Settings, SettingsStore};
 use ui::{
     ButtonStyle, ContextMenu, ContextMenuEntry, DocumentationSide, IconButton, IconName, IconSize,
     PopoverMenu, PopoverMenuHandle, Tooltip, prelude::*,
@@ -36,13 +44,14 @@ pub struct QuickActionBar {
     show: bool,
     toggle_selections_handle: PopoverMenuHandle<ContextMenu>,
     toggle_settings_handle: PopoverMenuHandle<ContextMenu>,
+    #[cfg(not(target_family = "wasm"))]
     workspace: WeakEntity<Workspace>,
 }
 
 impl QuickActionBar {
     pub fn new(
         buffer_search_bar: Entity<BufferSearchBar>,
-        workspace: &Workspace,
+        _workspace: &Workspace,
         cx: &mut Context<Self>,
     ) -> Self {
         let mut this = Self {
@@ -52,7 +61,8 @@ impl QuickActionBar {
             show: true,
             toggle_selections_handle: Default::default(),
             toggle_settings_handle: Default::default(),
-            workspace: workspace.weak_handle(),
+            #[cfg(not(target_family = "wasm"))]
+            workspace: _workspace.weak_handle(),
         };
         this.apply_settings(cx);
         cx.observe_global::<SettingsStore>(|this, cx| this.apply_settings(cx))
@@ -276,8 +286,10 @@ impl Render for QuickActionBar {
         let editor_focus_handle = editor.focus_handle(cx);
         let editor = editor.downgrade();
         let editor_settings_dropdown = {
+            #[cfg(not(target_family = "wasm"))]
             let diff_against_default_branch =
                 ProjectSettings::get_global(cx).git.diff_base == GitDiffBaseSetting::DefaultBranch;
+            #[cfg(not(target_family = "wasm"))]
             let fs = self
                 .workspace
                 .upgrade()
@@ -563,6 +575,7 @@ impl Render for QuickActionBar {
                                 },
                             );
 
+                            #[cfg(not(target_family = "wasm"))]
                             if let Some(fs) = fs.clone() {
                                 menu = menu.toggleable_entry(
                                     "Diff Against Default Branch",
@@ -592,11 +605,14 @@ impl Render for QuickActionBar {
                 })
         };
 
-        h_flex()
+        let toolbar = h_flex()
             .id("quick action bar")
-            .gap(DynamicSpacing::Base01.rems(cx))
+            .gap(DynamicSpacing::Base01.rems(cx));
+        #[cfg(not(target_family = "wasm"))]
+        let toolbar = toolbar
             .children(self.render_repl_menu(cx))
-            .children(self.render_preview_button(cx))
+            .children(self.render_preview_button(cx));
+        toolbar
             .children(search_button)
             .children(code_actions_dropdown)
             .children(editor_selections_dropdown)

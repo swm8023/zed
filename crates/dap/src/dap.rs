@@ -33,6 +33,9 @@ pub async fn configure_tcp_connection(
     let port = if let Some(port) = tcp_connection.port {
         port
     } else {
+        #[cfg(target_family = "wasm")]
+        anyhow::bail!("Selecting a debug adapter port requires the native runtime");
+        #[cfg(not(target_family = "wasm"))]
         transport::TcpTransport::port(&tcp_connection).await?
     };
 
@@ -62,7 +65,6 @@ pub fn send_telemetry(scenario: &DebugScenario, location: TelemetrySpawnLocation
             .ok()
             .map(serde_json::to_value)
             .and_then(Result::ok);
-
     })
     .detach();
 }

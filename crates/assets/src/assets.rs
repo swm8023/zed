@@ -7,6 +7,7 @@ use gpui::{App, AssetSource, Result, SharedString};
 // runtime so edits show up on the next launch without a rebuild and no
 // build-time path is baked in (which corgi's sandbox rejects). See
 // `util::fs_embed!`.
+#[cfg(not(target_family = "wasm"))]
 util::fs_embed! {
     pub struct Assets,
     crate_relative = "../../assets",
@@ -21,6 +22,21 @@ util::fs_embed! {
         "*.md",
     ],
     exclude = ["themes/src/*", "*.DS_Store"],
+}
+
+#[cfg(target_family = "wasm")]
+util::fs_embed! {
+    pub struct Assets,
+    crate_relative = "../../assets",
+    root_relative = "assets",
+    include = [
+        "fonts/**/*",
+        "icons/**/*",
+        "images/grid.svg",
+        "images/zed_logo.svg",
+        "themes/one/one.json",
+    ],
+    exclude = ["*.DS_Store"],
 }
 
 impl AssetSource for Assets {

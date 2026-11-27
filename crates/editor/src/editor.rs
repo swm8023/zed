@@ -222,6 +222,8 @@ use settings::{
 };
 use smallvec::{SmallVec, smallvec};
 use snippet::Snippet;
+#[cfg(not(target_family = "wasm"))]
+use std::time::Instant;
 use std::{
     any::{Any, TypeId},
     borrow::Cow,
@@ -235,7 +237,7 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
     sync::Arc,
-    time::{Duration, Instant},
+    time::Duration,
 };
 use task::TaskVariables;
 use text::{BufferId, FromAnchor, OffsetUtf16, Rope, ToOffset as _, ToPoint as _};
@@ -252,6 +254,8 @@ use ui::{
 };
 use ui_input::ErasedEditor;
 use util::{RangeExt, ResultExt, TryFutureExt, maybe, post_inc};
+#[cfg(target_family = "wasm")]
+use web_time::Instant;
 use workspace::{
     CollaboratorId, Item as WorkspaceItem, ItemId, ItemNavHistory, NavigationEntry, OpenInTerminal,
     OpenTerminal, Pane, RestoreOnStartupBehavior, SERIALIZATION_THROTTLE_TIME, SplitDirection,
@@ -9983,7 +9987,6 @@ impl Editor {
                 self.inlay_hint_visibility_changed(cx);
                 cx.emit(EditorEvent::BufferEdited);
                 cx.emit(SearchEvent::MatchesInvalidated);
-
             }
             multi_buffer::Event::BufferRangesUpdated {
                 buffer,

@@ -56,10 +56,11 @@ use std::{
     ops::{Neg, Range},
     path::{Path, PathBuf},
     sync::Arc,
-    time::{Duration, Instant},
+    time::Duration,
 };
 use svg_preview::svg_preview_view::SvgPreviewView;
 use theme_settings::ThemeSettings;
+use web_time::Instant;
 use ui::{
     ContextMenu, DecoratedIcon, IconDecoration, IconDecorationKind, IndentGuideColors,
     IndentGuideLayout, Indicator, KeyBinding, ListItem, ListItemSpacing, ProjectEmptyState,

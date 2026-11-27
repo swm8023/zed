@@ -16,7 +16,6 @@ doctest = false
 anyhow.workspace = true
 async-compression.workspace = true
 async-fs.workspace = true
-async-tar.workspace = true
 futures.workspace = true
 gpui.workspace = true
 http_client.workspace = true
@@ -26,6 +25,9 @@ serde_json.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
 util.workspace = true
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+async-tar.workspace = true
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

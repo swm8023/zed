@@ -1286,6 +1286,9 @@ impl SerializableItem for Editor {
         log::debug!(
             "Deserialized editor {item_id:?} in workspace {workspace_id:?}, {serialized_editor:?}"
         );
+        #[cfg(target_family = "wasm")]
+        let metadata_prefetch =
+            EditorDb::prefetch_metadata(item_id, workspace_id, serialized_editor.abs_path.clone());
 
         match serialized_editor {
             SerializedEditor {
@@ -1296,6 +1299,10 @@ impl SerializableItem for Editor {
             } => window.spawn(cx, {
                 let project = project.clone();
                 async move |cx| {
+                    #[cfg(target_family = "wasm")]
+                    metadata_prefetch
+                        .await
+                        .context("Failed to prefetch editor metadata")?;
                     let content_language_detection_enabled = language.is_none();
                     let language_registry =
                         project.read_with(cx, |project, _| project.languages().clone());
@@ -1356,6 +1363,10 @@ impl SerializableItem for Editor {
 
                 match opened_buffer {
                     Some(opened_buffer) => window.spawn(cx, async move |cx| {
+                        #[cfg(target_family = "wasm")]
+                        metadata_prefetch
+                            .await
+                            .context("Failed to prefetch editor metadata")?;
                         let (_, buffer) = opened_buffer
                             .await
                             .context("Failed to open path in project")?;
@@ -1383,6 +1394,10 @@ impl SerializableItem for Editor {
                         // the item to a pane. The caller (deserialize_to) will add the
                         // returned item to the correct pane.
                         window.spawn(cx, async move |cx| {
+                            #[cfg(target_family = "wasm")]
+                            metadata_prefetch
+                                .await
+                                .context("Failed to prefetch editor metadata")?;
                             let buffer = project
                                 .update(cx, |project, cx| project.open_local_buffer(&abs_path, cx))
                                 .await
@@ -1414,6 +1429,10 @@ impl SerializableItem for Editor {
                 language,
                 ..
             } => window.spawn(cx, async move |cx| {
+                #[cfg(target_family = "wasm")]
+                metadata_prefetch
+                    .await
+                    .context("Failed to prefetch editor metadata")?;
                 let buffer = project
                     .update(cx, |project, cx| project.create_buffer(None, true, cx))
                     .await
@@ -2017,7 +2036,40 @@ impl SearchableItem for Editor {
                 {
                     let query = query.clone();
 
+                    #[cfg(target_family = "wasm")]
+                    {
+                        let matches = query
+                            .search(
+                                search_buffer,
+                                Some(search_range.start.0..search_range.end.0),
+                            )
+                            .await
+                            .into_iter()
+                            .filter_map(|match_range| {
+                                if let Some(deleted_hunk_anchor) = deleted_hunk_anchor {
+                                    let start = search_buffer
+                                        .anchor_after(search_range.start + match_range.start);
+                                    let end = search_buffer
+                                        .anchor_before(search_range.start + match_range.end);
+                                    Some(
+                                        deleted_hunk_anchor.with_diff_base_anchor(start)
+                                            ..deleted_hunk_anchor.with_diff_base_anchor(end),
+                                    )
+                                } else {
+                                    let start = search_buffer
+                                        .anchor_after(search_range.start + match_range.start);
+                                    let end = search_buffer
+                                        .anchor_before(search_range.start + match_range.end);
+                                    buffer.anchor_range_in_buffer(start..end)
+                                }
+                            });
+                        ranges.extend(matches);
+                        continue;
+                    }
+
+                    #[cfg(not(target_family = "wasm"))]
                     let mut results = Vec::new();
+                    #[cfg(not(target_family = "wasm"))]
                     executor
                         .scoped(|scope| {
                             for search_range in chunk_search_range(
@@ -2069,6 +2121,7 @@ impl SearchableItem for Editor {
                         })
                         .await;
 
+                    #[cfg(not(target_family = "wasm"))]
                     for rx in results {
                         if let Ok(results) = rx.await {
                             ranges.extend(results);

@@ -70,6 +70,8 @@ use serde::Deserialize;
 use settings::{GitDiffBaseSetting, Settings, SettingsLocation, SettingsStore, WorktreeId};
 use smallvec::SmallVec;
 use smol::future::yield_now;
+#[cfg(not(target_family = "wasm"))]
+use std::time::Instant;
 use std::{
     cmp::Ordering,
     collections::{BTreeSet, HashSet, VecDeque, hash_map::Entry},
@@ -82,7 +84,7 @@ use std::{
         Arc,
         atomic::{self, AtomicU64},
     },
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, SystemTime},
 };
 use sum_tree::{Edit, SumTree, TreeMap};
 use task::Shell;
@@ -93,6 +95,8 @@ use util::{
     post_inc,
     rel_path::RelPath,
 };
+#[cfg(target_family = "wasm")]
+use web_time::Instant;
 use worktree::{
     File, PathChange, PathKey, PathProgress, PathSummary, PathTarget, ProjectEntryId,
     UpdatedGitRepositoriesSet, UpdatedGitRepository, Worktree, WorktreeSettings,
@@ -1058,6 +1062,17 @@ impl GitStore {
     }
 
     pub fn init(client: &AnyProtoClient) {
+        client.add_entity_request_handler(Self::handle_askpass);
+        client.add_entity_message_handler(Self::handle_update_diff_bases);
+        client.add_entity_message_handler(Self::handle_update_repository);
+        client.add_entity_message_handler(Self::handle_remove_repository);
+
+        #[cfg(not(target_family = "wasm"))]
+        Self::register_host_requests(client);
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn register_host_requests(client: &AnyProtoClient) {
         client.add_entity_request_handler(Self::handle_get_remotes);
         client.add_entity_request_handler(Self::handle_get_branches);
         client.add_entity_request_handler(Self::handle_get_default_branch);
@@ -1089,7 +1104,6 @@ impl GitStore {
         client.add_entity_request_handler(Self::handle_add_path_to_git_info_exclude);
         client.add_entity_request_handler(Self::handle_open_commit_message_buffer);
         client.add_entity_request_handler(Self::handle_set_index_text);
-        client.add_entity_request_handler(Self::handle_askpass);
         client.add_entity_request_handler(Self::handle_check_for_pushed_commits);
         client.add_entity_request_handler(Self::handle_git_diff);
         client.add_entity_request_handler(Self::handle_tree_diff);
@@ -1097,13 +1111,10 @@ impl GitStore {
         client.add_entity_request_handler(Self::handle_load_commit_template);
         client.add_entity_request_handler(Self::handle_open_unstaged_diff);
         client.add_entity_request_handler(Self::handle_open_uncommitted_diff);
-        client.add_entity_message_handler(Self::handle_update_diff_bases);
         client.add_entity_request_handler(Self::handle_get_file_permalink);
         client.add_entity_request_handler(Self::handle_get_permalink_to_line);
         client.add_entity_request_handler(Self::handle_blame_buffer);
         client.add_entity_request_handler(Self::handle_blame_buffer_at_revision);
-        client.add_entity_message_handler(Self::handle_update_repository);
-        client.add_entity_message_handler(Self::handle_remove_repository);
         client.add_entity_request_handler(Self::handle_git_clone);
         client.add_entity_request_handler(Self::handle_get_worktrees);
         client.add_entity_request_handler(Self::handle_create_worktree);

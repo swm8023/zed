@@ -81,7 +81,7 @@ use std::{
     ops::{Deref, Range},
     rc::Rc,
     sync::Arc,
-    time::{Duration, Instant},
+    time::Duration,
 };
 use sum_tree::Bias;
 use text::{BufferId, ToPoint as _};
@@ -91,6 +91,7 @@ use ui::utils::ensure_minimum_contrast;
 use ui::{ButtonLike, POPOVER_Y_PADDING, Tooltip, prelude::*, scrollbars::ShowScrollbar};
 use unicode_segmentation::UnicodeSegmentation;
 use util::{ResultExt, debug_panic};
+use web_time::Instant;
 use workspace::{
     CollaboratorId, ItemHandle, Workspace,
     item::{Item, ItemBufferKind},

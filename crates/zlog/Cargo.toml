@@ -20,6 +20,7 @@ collections.workspace = true
 chrono = { workspace = true, default-features = true }
 log = { workspace = true, features = ["kv_unstable_std"] }
 anyhow.workspace = true
+web-time.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -17,29 +17,34 @@ use crate::application_menu::{
 };
 
 
+#[cfg(not(target_family = "wasm"))]
+use gpui::{Element, Focusable};
 use gpui::{
-    Action, AnyElement, App, Context, Element, Entity, Focusable,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Subscription, TaskExt, WeakEntity, Window, div,
+    AnyElement, App, Context, Entity, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    Render, Styled, Subscription, WeakEntity, Window, div,
 };
 use project::{
     Project, git_store::GitStoreEvent, project_settings::ProjectSettings,
     trusted_worktrees::TrustedWorktrees,
 };
+#[cfg(not(target_family = "wasm"))]
 use remote::RemoteConnectionOptions;
 use settings::Settings as _;
 
 use theme::ActiveTheme;
 use title_bar_settings::TitleBarSettings;
+#[cfg(not(target_family = "wasm"))]
+use ui::ButtonLike;
 use ui::{
-    ButtonLike, IconWithIndicator, Indicator, PopoverMenu,
-    TintColor, Tooltip, prelude::*, utils::platform_title_bar_height,
+    IconWithIndicator, Indicator, PopoverMenu, TintColor, Tooltip, prelude::*,
+    utils::platform_title_bar_height,
 };
 use util::ResultExt;
 use workspace::{
     AccessibleMode, MultiWorkspace, ToggleWorktreeSecurity, Workspace,
 };
 
+#[cfg(not(target_family = "wasm"))]
 use zed_actions::OpenRemote;
 
 const MAX_PROJECT_NAME_LENGTH: usize = 40;
@@ -359,6 +364,7 @@ impl TitleBar {
         }
     }
 
+    #[cfg(not(target_family = "wasm"))]
     fn worktree_count(&self, cx: &App) -> usize {
         self.project.read(cx).visible_worktrees(cx).count()
     }
@@ -424,6 +430,25 @@ impl TitleBar {
             .count()
     }
 
+    #[cfg(target_family = "wasm")]
+    fn render_remote_project_connection(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let color = match self.project.read(cx).remote_connection_state(cx)? {
+            remote::ConnectionState::Connected => Color::Success,
+            remote::ConnectionState::Connecting => Color::Info,
+            remote::ConnectionState::HeartbeatMissed | remote::ConnectionState::Reconnecting => Color::Warning,
+            remote::ConnectionState::Disconnected => Color::Error,
+        };
+        Some(
+            IconWithIndicator::new(
+                Icon::new(IconName::Server).size(IconSize::Small),
+                Some(Indicator::dot().color(color)),
+            )
+            .indicator_border_color(Some(cx.theme().colors().title_bar_background))
+            .into_any_element(),
+        )
+    }
+
+    #[cfg(not(target_family = "wasm"))]
     fn render_remote_project_connection(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let workspace = self.workspace.clone();
 
@@ -551,6 +576,22 @@ impl TitleBar {
         }
     }
 
+    #[cfg(target_family = "wasm")]
+    fn render_project_name(
+        &self,
+        name: Option<SharedString>,
+        _: &mut Window,
+        _: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let label = name
+            .map(|name| util::truncate_and_trailoff(&name, MAX_PROJECT_NAME_LENGTH))
+            .unwrap_or_else(|| "Workspace".to_string());
+        Label::new(label)
+            .size(LabelSize::Small)
+            .truncate()
+    }
+
+    #[cfg(not(target_family = "wasm"))]
     fn render_project_name(
         &self,
         name: Option<SharedString>,

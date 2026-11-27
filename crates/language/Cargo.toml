@@ -72,12 +72,16 @@ tree-sitter-md = { workspace = true, optional = true }
 tree-sitter-python = { workspace = true, optional = true }
 tree-sitter-rust = { workspace = true, optional = true }
 tree-sitter-typescript = { workspace = true, optional = true }
-tree-sitter = { workspace = true, features = ["wasm"] }
+tree-sitter.workspace = true
 unicase.workspace = true
 util.workspace = true
 watch.workspace = true
+web-time.workspace = true
 zlog.workspace = true
 ztracing.workspace = true
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+tree-sitter = { workspace = true, features = ["wasm"] }
 
 [dev-dependencies]
 collections = { workspace = true, features = ["test-support"] }

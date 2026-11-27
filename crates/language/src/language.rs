@@ -45,6 +45,7 @@ pub use language_core::{
 };
 
 use futures::future::FutureExt as _;
+use language_core::ParseableLanguage;
 use language_core::highlight_cache::{MAX_TEXT_HIGHLIGHT_ENTRY_BYTES, TextHighlightKey};
 use language_core::highlight_map::HighlightCaptureRef;
 pub use language_core::{
@@ -97,7 +98,9 @@ pub use toolchain::{
     LanguageToolchainStore, LocalLanguageToolchainStore, Toolchain, ToolchainList, ToolchainLister,
     ToolchainMetadata, ToolchainScope,
 };
-use tree_sitter::{self, QueryCursor, WasmStore, wasmtime};
+use tree_sitter::QueryCursor;
+#[cfg(not(target_family = "wasm"))]
+use tree_sitter::{WasmStore, wasmtime};
 use util::paths::PathStyle;
 use util::rel_path::RelPath;
 
@@ -130,13 +133,19 @@ pub(crate) fn to_settings_soft_wrap(value: language_core::SoftWrap) -> settings:
 }
 
 static QUERY_CURSORS: Mutex<Vec<QueryCursor>> = Mutex::new(vec![]);
+#[cfg(not(target_family = "wasm"))]
 static PARSERS: Mutex<Vec<Parser>> = Mutex::new(vec![]);
+#[cfg(target_family = "wasm")]
+thread_local! {
+    static PARSERS: std::cell::RefCell<Vec<Parser>> = const { std::cell::RefCell::new(Vec::new()) };
+}
 
 #[ztracing::instrument(skip_all)]
 pub fn with_parser<F, R>(func: F) -> R
 where
     F: FnOnce(&mut Parser) -> R,
 {
+    #[cfg(not(target_family = "wasm"))]
     let mut parser = PARSERS.lock().pop().unwrap_or_else(|| {
         let mut parser = Parser::new();
         parser
@@ -144,6 +153,10 @@ where
             .unwrap();
         parser
     });
+    #[cfg(target_family = "wasm")]
+    let mut parser = PARSERS
+        .with_borrow_mut(Vec::pop)
+        .unwrap_or_else(Parser::new);
     // Tree-sitter auto-resets the parser at the end of a successful parse,
     // but the cancellation paths (progress callback returning `Break`,
     // cancelled balancing) leave outstanding state on the parser. The next
@@ -152,7 +165,10 @@ where
     parser.reset();
     parser.set_included_ranges(&[]).unwrap();
     let result = func(&mut parser);
+    #[cfg(not(target_family = "wasm"))]
     PARSERS.lock().push(parser);
+    #[cfg(target_family = "wasm")]
+    PARSERS.with_borrow_mut(|parsers| parsers.push(parser));
     result
 }
 
@@ -164,6 +180,7 @@ where
     func(cursor.deref_mut())
 }
 
+#[cfg(not(target_family = "wasm"))]
 static WASM_ENGINE: LazyLock<wasmtime::Engine> = LazyLock::new(|| {
     wasmtime::Engine::new(&wasmtime::Config::new()).expect("Failed to create Wasmtime engine")
 });
@@ -968,8 +985,14 @@ pub struct Language {
 }
 
 impl Language {
+    #[cfg(not(target_family = "wasm"))]
     pub fn new(config: LanguageConfig, ts_language: Option<tree_sitter::Language>) -> Self {
-        Self::new_with_id(LanguageId::new(), config, ts_language)
+        Self::new_with_id(LanguageId::new(), config, ts_language.map(Into::into))
+    }
+
+    #[cfg(target_family = "wasm")]
+    pub fn new(config: LanguageConfig, grammar: Option<ParseableLanguage>) -> Self {
+        Self::new_with_id(LanguageId::new(), config, grammar)
     }
 
     pub fn id(&self) -> LanguageId {
@@ -979,12 +1002,12 @@ impl Language {
     fn new_with_id(
         id: LanguageId,
         config: LanguageConfig,
-        ts_language: Option<tree_sitter::Language>,
+        grammar: Option<ParseableLanguage>,
     ) -> Self {
         Self {
             id,
             config,
-            grammar: ts_language.map(|ts_language| Arc::new(Grammar::new(ts_language))),
+            grammar: grammar.map(|grammar| Arc::new(Grammar::new(grammar))),
             context_provider: None,
             toolchain: None,
             manifest_name: None,
@@ -1498,7 +1521,7 @@ impl HighlightSource for str {
 
     fn parse(&self, grammar: &Grammar) -> Result<Tree> {
         with_parser(|parser| {
-            parser.set_language(&grammar.ts_language)?;
+            parser.set_language(&grammar.parseable_language()?)?;
             parser
                 .parse(self, None)
                 .context("tree-sitter returned no tree")
@@ -1530,7 +1553,7 @@ impl HighlightSource for Rope {
 
 pub(crate) fn parse_text(grammar: &Grammar, text: &Rope, old_tree: Option<Tree>) -> Result<Tree> {
     with_parser(|parser| {
-        parser.set_language(&grammar.ts_language)?;
+        parser.set_language(&grammar.parseable_language()?)?;
         let mut chunks = text.chunks_in_range(0..text.len());
         parser
             .parse_with_options(

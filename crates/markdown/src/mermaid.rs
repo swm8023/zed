@@ -13,6 +13,7 @@ use ui::{CopyButton, ScrollAxes, Scrollbars, TintColor, Tooltip, WithScrollbar, 
 
 use crate::parser::{CodeBlockKind, MarkdownEvent, MarkdownTag};
 use settings::Settings as _;
+#[cfg(not(target_family = "wasm"))]
 use theme_settings::ThemeSettings;
 
 use super::{CopyButtonVisibility, Markdown, MarkdownStyle, MermaidZoomCallback, ParsedMarkdown};
@@ -207,21 +208,23 @@ impl MermaidState {
 
 impl CachedMermaidDiagram {
     fn new(
-        contents: ParsedMarkdownMermaidDiagramContents,
+        _contents: ParsedMarkdownMermaidDiagramContents,
         zoom: f32,
         fallback_image: Option<(Arc<RenderImage>, f32)>,
         cx: &mut Context<Markdown>,
     ) -> Self {
         let render_image = Arc::new(OnceLock::<anyhow::Result<Arc<RenderImage>>>::new());
         let parsed_svg = Arc::new(OnceLock::<Arc<ParsedSvg>>::new());
-        let svg_renderer = cx.svg_renderer();
-        let mermaid_theme = build_mermaid_theme(cx);
+        #[cfg(not(target_family = "wasm"))]
+        let (contents, svg_renderer, mermaid_theme) =
+            (_contents, cx.svg_renderer(), build_mermaid_theme(cx));
 
         let task = cx.spawn({
             let render_image = render_image.clone();
             let parsed_svg = parsed_svg.clone();
             let fallback_image = fallback_image.clone();
             async move |this, cx| {
+                #[cfg(not(target_family = "wasm"))]
                 let value = cx
                     .background_spawn(async move {
                         let svg_string =
@@ -237,6 +240,8 @@ impl CachedMermaidDiagram {
                         anyhow::Ok((tree, image))
                     })
                     .await;
+                #[cfg(target_family = "wasm")]
+                let value = Err(anyhow::anyhow!("Mermaid rendering is disabled in Zed Web"));
                 let value = match value {
                     Ok((tree, image)) => {
                         parsed_svg.set(tree).ok();
@@ -353,6 +358,7 @@ impl CachedMermaidDiagram {
 /// This isn't perfect - very wide fonts will likely still cause overflow. A
 /// proper fix would involve somehow piping `resvg`'s actual measurements into
 /// `merman`, but that is a lot of work for a fairly uncommon edge case.
+#[cfg(not(target_family = "wasm"))]
 fn mermaid_font_family(font_family: &str) -> String {
     let font_family = gpui::font_name_with_fallbacks(font_family, "system-ui");
     if font_family
@@ -365,6 +371,7 @@ fn mermaid_font_family(font_family: &str) -> String {
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 fn build_mermaid_theme(cx: &Context<Markdown>) -> mermaid_render::MermaidTheme {
     let colors = cx.theme().colors();
     let theme_settings = ThemeSettings::get_global(cx);

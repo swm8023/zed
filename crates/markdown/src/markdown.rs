@@ -655,6 +655,11 @@ impl Markdown {
         options: MarkdownOptions,
         cx: &mut Context<Self>,
     ) -> Self {
+        #[cfg(target_family = "wasm")]
+        let options = MarkdownOptions {
+            render_mermaid_diagrams: false,
+            ..options
+        };
         let focus_handle = cx.focus_handle();
 
         let theme_subscription = if options.render_mermaid_diagrams {

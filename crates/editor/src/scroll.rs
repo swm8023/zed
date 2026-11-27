@@ -20,9 +20,13 @@ use language::language_settings::{AllLanguageSettings, SoftWrap};
 use language::{Bias, Point};
 pub use scroll_amount::ScrollAmount;
 use settings::Settings;
+#[cfg(not(target_family = "wasm"))]
+use std::time::Instant;
 use std::{cmp::Ordering, time::Duration};
 use ui::scrollbars::ScrollbarAutoHide;
 use util::ResultExt;
+#[cfg(target_family = "wasm")]
+use web_time::Instant;
 use workspace::{ItemId, WorkspaceId};
 
 const SCROLLBAR_SHOW_INTERVAL: Duration = Duration::from_secs(1);

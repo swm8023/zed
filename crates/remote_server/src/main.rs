@@ -30,6 +30,9 @@ fn main() -> anyhow::Result<()> {
     }
 
     if let Some(command) = cli.command {
+        if let Ok(data_dir) = std::env::var("ZED_REMOTE_SERVER_DATA_DIR") {
+            paths::set_custom_data_dir(&data_dir);
+        }
         use remote_server::ExecuteProxyError;
 
         let res = remote_server::run(command);

@@ -140,6 +140,7 @@ paths.workspace = true
 picker.workspace = true
 profiling.workspace = true
 project.workspace = true
+quick_action_bar.workspace = true
 project_panel.workspace = true
 project_symbols.workspace = true
 project_bookmarks.workspace = true

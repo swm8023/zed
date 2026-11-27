@@ -18,23 +18,32 @@ gpui = ["dep:gpui"]
 test-support = ["collections/test-support", "gpui/test-support", "proto/test-support"]
 
 [dependencies]
+web-time.workspace = true
 anyhow.workspace = true
-async-tungstenite.workspace = true
-base64.workspace = true
+tungstenite = { version = "0.28", default-features = false }
 collections.workspace = true
 futures.workspace = true
 gpui = { workspace = true, optional = true }
 gpui_util.workspace = true
 parking_lot.workspace = true
 proto.workspace = true
-rand.workspace = true
-rsa.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
 strum.workspace = true
 tracing = { version = "0.1", default-features = false, features = ["std", "log"] }
+util.workspace = true
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
 zstd.workspace = true
+
+async-tungstenite.workspace = true
+base64.workspace = true
+rand.workspace = true
+rsa.workspace = true
+sha2.workspace = true
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
 
 [dev-dependencies]
 collections = { workspace = true, features = ["test-support"] }

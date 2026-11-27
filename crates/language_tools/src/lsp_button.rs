@@ -604,9 +604,10 @@ impl LanguageServerState {
                             let server_message = server_message.clone();
                             let process_memory_cache = process_memory_cache.clone();
                             move |_, cx| {
-                                let memory_usage = process_id.map(|pid| {
-                                    process_memory_cache.borrow_mut().get_memory_usage(pid)
-                                });
+                                let memory_usage =
+                                    process_id.filter(|_| sysinfo::IS_SUPPORTED_SYSTEM).map(|pid| {
+                                        process_memory_cache.borrow_mut().get_memory_usage(pid)
+                                    });
 
                                 let memory_label = memory_usage.map(|bytes| {
                                     if bytes >= 1024 * 1024 * 1024 {
