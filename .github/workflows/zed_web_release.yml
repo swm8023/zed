@@ -1,33 +1,100 @@
-name: Probe Zed Web graphics
+Compile Zed Web for local graphics verification
+
 on:
   workflow_dispatch:
+  push:
+    branches: [ci/zed-web-release]
+
 permissions:
   contents: read
+
 jobs:
-  probe:
-    strategy:
-      matrix:
-        runner: [windows-2022, windows-2025]
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 9
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 180
+    env:
+      CARGO_PROFILE_RELEASE_FAST_DEBUG: "0"
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           persist-credentials: false
-      - name: Install profiling dependencies
-        run: python -m pip install -r script/windows-local-web/requirements.txt
-      - name: Extract Edge 158.0.4370.45 for comparison
+          ref: afb905821709384bcfc7fd14aa36e350c463ff86
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 22
+
+      - name: Install WASI SDK
+        shell: bash
+        run: bash script/download-wasi-sdk
+
+      - name: Install wasm-bindgen CLI
+        shell: pwsh
         run: |
-          $installer = Join-Path $env:RUNNER_TEMP 'edge.msi'
-          $directory = Join-Path $env:RUNNER_TEMP 'edge-extracted'
-          $url = 'https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/c2bf670e-30a9-46a9-b0e2-9ec403428385/MicrosoftEdgeEnterpriseX64.msi'
-          Invoke-WebRequest -Uri $url -OutFile $installer
-          if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ne '8BFCCAF626627E37B72E3E57108530B1479FAC5710F939E528866CC1095CA172') {
-              throw 'Edge installer checksum mismatch.'
+          $lock = Get-Content -LiteralPath Cargo.lock -Raw
+          $match = [regex]::Match($lock, '(?m)^name = "wasm-bindgen"\r?\nversion = "([0-9.]+)"')
+          if (-not $match.Success) { throw 'wasm-bindgen is missing from Cargo.lock.' }
+          $version = $match.Groups[1].Value
+          $name = "wasm-bindgen-$version-x86_64-pc-windows-msvc"
+          $url = "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/$version/$name.tar.gz"
+          $archive = Join-Path $env:RUNNER_TEMP "$name.tar.gz"
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          Invoke-WebRequest -Uri "$url.sha256sum" -OutFile "$archive.sha256sum"
+          $checksum = (Get-Content -LiteralPath "$archive.sha256sum" -Raw) -split '\s+' | Select-Object -First 1
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $checksum) {
+              throw 'The wasm-bindgen CLI archive failed SHA-256 verification.'
           }
-          $extract = Start-Process msiexec.exe -ArgumentList "/a `"$installer`" /qn TARGETDIR=`"$directory`"" -PassThru -Wait -WindowStyle Hidden
-          if ($extract.ExitCode -ne 0) { throw "MSI extraction failed: $($extract.ExitCode)" }
-          $browser = Get-ChildItem -LiteralPath $directory -Filter 'msedge.exe' -File -Recurse | Select-Object -First 1
-          if ($browser) { "ZED_PROBE_EDGE=$($browser.FullName)" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8 }
-      - name: Check the WebGPU adapter, device, and canvas
-        run: python -B script/windows-local-web/probe-gpu.py
+          tar -xzf $archive -C $env:RUNNER_TEMP
+          if ($LASTEXITCODE) { throw 'Could not extract the wasm-bindgen CLI.' }
+          Join-Path $env:RUNNER_TEMP $name | Add-Content -LiteralPath $env:GITHUB_PATH -Encoding utf8
+
+      - name: Install browser profiling tools
+        shell: pwsh
+        run: |
+          python -m pip install -r script/windows-local-web/requirements.txt
+          if ($LASTEXITCODE) { throw 'Could not install the browser profiling dependencies.' }
+          $version = 'version_133'
+          $name = "binaryen-$version-x86_64-windows.tar.gz"
+          $archive = Join-Path $env:RUNNER_TEMP $name
+          Invoke-WebRequest -Uri "https://github.com/WebAssembly/binaryen/releases/download/$version/$name" -OutFile $archive
+          $sha256 = '17a2cbeac6b5693c5fbafab3838d3c65fd9c1eb38b05f5baec6c657e8c84995b'
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $sha256) {
+              throw 'The Binaryen archive failed SHA-256 verification.'
+          }
+          tar -xzf $archive -C $env:RUNNER_TEMP
+          if ($LASTEXITCODE) { throw 'Could not extract Binaryen.' }
+          $splitter = Join-Path $env:RUNNER_TEMP "binaryen-$version/bin/wasm-split.exe"
+          "ZED_WASM_SPLIT=$splitter" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+
+      - name: Verify profiling gateway
+        shell: pwsh
+        run: python -m unittest discover -s script/windows-local-web -p test_gateway.py -v
+
+      - name: Build Web and Windows remote-server
+        shell: pwsh
+        run: |
+          rustup show
+          if ($LASTEXITCODE) { throw 'Could not install the workspace Rust toolchain.' }
+          $toolchain = (rustup show active-toolchain) -split '\s+' | Select-Object -First 1
+          if ($LASTEXITCODE -or -not $toolchain) { throw 'Could not resolve the workspace Rust toolchain.' }
+          $buildDirectory = Join-Path $env:RUNNER_TEMP zed-web-build
+          ./script/windows-local-web/build.ps1 -Component All -WasiSdk target/wasi-sdk `
+            -WasmToolchain $toolchain -OutputDirectory $buildDirectory
+      - name: Record the compiled source commit
+        shell: pwsh
+        run: |
+          $buildDirectory = Join-Path $env:RUNNER_TEMP zed-web-build
+          $source = git rev-parse HEAD
+          if ($LASTEXITCODE) { throw 'Could not read the compiled source commit.' }
+          Set-Content -LiteralPath (Join-Path $buildDirectory 'source-commit.txt') -Value $source -Encoding ascii
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: zed-web-compiled-afb905821709384bcfc7fd14aa36e350c463ff86
+          path: |
+            ${{ runner.temp }}/zed-web-build/web/
+            ${{ runner.temp }}/zed-web-build/cargo/release-fast/remote-server.exe
+            ${{ runner.temp }}/zed-web-build/source-commit.txt
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 1
