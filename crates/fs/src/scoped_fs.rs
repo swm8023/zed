@@ -247,12 +247,19 @@ impl Fs for ScopedFs {
     ) -> Result<Pin<Box<dyn Send + Stream<Item = Result<PathBuf>>>>> {
         let entries = self.inner.read_dir(&self.read_path(path)?).await?;
         let roots = self.roots.clone();
-        Ok(Box::pin(entries.filter(move |entry| {
-            let allowed = match entry {
-                Ok(path) => roots.resolve(path, false).is_ok(),
-                Err(_) => true,
+        // Callers match children relative to the directory they requested.
+        let directory = path.to_path_buf();
+        Ok(Box::pin(entries.filter_map(move |entry| {
+            let entry = match entry {
+                Ok(path) if roots.resolve(&path, false).is_ok() => Some(
+                    path.file_name()
+                        .context("Directory entry has no file name")
+                        .map(|name| directory.join(name)),
+                ),
+                Ok(_) => None,
+                Err(error) => Some(Err(error)),
             };
-            futures::future::ready(allowed)
+            futures::future::ready(entry)
         })))
     }
 
@@ -329,6 +336,28 @@ impl Fs for ScopedFs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "windows")]
+    #[gpui::test]
+    async fn scoped_read_dir_preserves_the_callers_directory(executor: BackgroundExecutor) {
+        use futures::TryStreamExt as _;
+
+        let parent = tempfile::tempdir().expect("create a temporary directory");
+        let project = dunce::simplified(parent.path());
+        let ignore_file = project.join(".gitignore");
+        std::fs::write(&ignore_file, "ignored.txt\n").expect("write the ignore file");
+        let fs = ScopedFs::new(RealFs::new(None, executor), project, &[])
+            .expect("create the scoped filesystem");
+
+        let entries: Vec<_> = fs
+            .read_dir(project)
+            .await
+            .expect("read the scoped directory")
+            .try_collect()
+            .await
+            .expect("collect the scoped directory entries");
+        assert_eq!(entries, [ignore_file]);
+    }
 
     #[test]
     fn scoped_paths_allow_project_writes_and_only_dependency_reads() -> Result<()> {
