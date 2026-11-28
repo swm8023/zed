@@ -79,19 +79,25 @@ async def request_device(page, origin):
 async def probe(origin, scratch, fingerprint, browser, flags):
     flags = list(flags)
     profile = scratch / "edge"
-    with subprocess.Popen([
+    output = scratch / "edge.log"
+    with output.open("w", encoding="utf-8") as log, subprocess.Popen([
         browser, "--headless=new", "--enable-unsafe-webgpu", "--disable-extensions",
         "--no-first-run", "--disable-sync", "--remote-debugging-port=0",
+        "--enable-logging=stderr",
         f"--user-data-dir={profile}", f"--ignore-certificate-errors-spki-list={fingerprint}",
         *flags, "about:blank",
-    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW) as process:
+    ], stdout=subprocess.DEVNULL, stderr=log, creationflags=subprocess.CREATE_NO_WINDOW) as process:
         try:
             async with asyncio.timeout(20):
                 page = await profiler.devtools_page(profile)
-                return await request_device(page, origin)
+                result = await request_device(page, origin)
         finally:
             process.terminate()
             process.wait(timeout=8)
+    if not result.get("rendered"):
+        result["diagnostics"] = [line for line in output.read_text(encoding="utf-8", errors="replace").splitlines()
+                                 if any(word in line.lower() for word in ("vulkan", "swiftshader", "dawn", "gpu"))][-10:]
+    return result
 
 
 async def app(scope, receive, send):
@@ -119,11 +125,14 @@ async def main():
                 edge = Path(os.environ["ProgramFiles(x86)"]) / "Microsoft/Edge/Application/msedge.exe"
                 chrome = Path(os.environ["ProgramFiles"]) / "Google/Chrome/Application/chrome.exe"
                 software = ["--use-webgpu-adapter=swiftshader", "--enable-unsafe-swiftshader"]
-                for label, browser, flags in [
-                    ("chrome-swiftshader", chrome, software),
-                    ("chrome-default", chrome, []),
-                    ("edge-swiftshader-angle", edge, [*software, "--use-angle=swiftshader"]),
-                ]:
+                variants = [
+                    ("edge-swiftshader", edge, software),
+                    ("edge-default", edge, []),
+                    ("chrome-vulkan", chrome, [*software, "--use-vulkan=swiftshader", "--disable-vulkan-surface"]),
+                ]
+                if browser := os.environ.get("ZED_PROBE_EDGE"):
+                    variants.append(("edge-pinned-swiftshader", Path(browser), software))
+                for label, browser, flags in variants:
                     location = scratch / label
                     location.mkdir()
                     try:
