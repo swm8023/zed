@@ -1,101 +1,17 @@
-name: Build Zed Web release artifacts
-
+name: Probe Zed Web graphics
 on:
   workflow_dispatch:
-  push:
-    branches: [ci/zed-web-release]
-
 permissions:
   contents: read
-
 jobs:
-  build:
+  probe:
     runs-on: windows-2022
-    timeout-minutes: 180
-    env:
-      CARGO_PROFILE_RELEASE_FAST_DEBUG: "0"
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           persist-credentials: false
-
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
-        with:
-          node-version: 22
-
-      - name: Install WASI SDK
-        shell: bash
-        run: bash script/download-wasi-sdk
-
-      - name: Install wasm-bindgen CLI
-        shell: pwsh
-        run: |
-          $lock = Get-Content -LiteralPath Cargo.lock -Raw
-          $match = [regex]::Match($lock, '(?m)^name = "wasm-bindgen"\r?\nversion = "([0-9.]+)"')
-          if (-not $match.Success) { throw 'wasm-bindgen is missing from Cargo.lock.' }
-          $version = $match.Groups[1].Value
-          $name = "wasm-bindgen-$version-x86_64-pc-windows-msvc"
-          $url = "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/$version/$name.tar.gz"
-          $archive = Join-Path $env:RUNNER_TEMP "$name.tar.gz"
-          Invoke-WebRequest -Uri $url -OutFile $archive
-          Invoke-WebRequest -Uri "$url.sha256sum" -OutFile "$archive.sha256sum"
-          $checksum = (Get-Content -LiteralPath "$archive.sha256sum" -Raw) -split '\s+' | Select-Object -First 1
-          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $checksum) {
-              throw 'The wasm-bindgen CLI archive failed SHA-256 verification.'
-          }
-          tar -xzf $archive -C $env:RUNNER_TEMP
-          if ($LASTEXITCODE) { throw 'Could not extract the wasm-bindgen CLI.' }
-          Join-Path $env:RUNNER_TEMP $name | Add-Content -LiteralPath $env:GITHUB_PATH -Encoding utf8
-
-      - name: Install browser profiling tools
-        shell: pwsh
-        run: |
-          python -m pip install -r script/windows-local-web/requirements.txt
-          if ($LASTEXITCODE) { throw 'Could not install the browser profiling dependencies.' }
-          $version = 'version_133'
-          $name = "binaryen-$version-x86_64-windows.tar.gz"
-          $archive = Join-Path $env:RUNNER_TEMP $name
-          Invoke-WebRequest -Uri "https://github.com/WebAssembly/binaryen/releases/download/$version/$name" -OutFile $archive
-          $sha256 = '17a2cbeac6b5693c5fbafab3838d3c65fd9c1eb38b05f5baec6c657e8c84995b'
-          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $sha256) {
-              throw 'The Binaryen archive failed SHA-256 verification.'
-          }
-          tar -xzf $archive -C $env:RUNNER_TEMP
-          if ($LASTEXITCODE) { throw 'Could not extract Binaryen.' }
-          $splitter = Join-Path $env:RUNNER_TEMP "binaryen-$version/bin/wasm-split.exe"
-          "ZED_WASM_SPLIT=$splitter" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
-
-      - name: Verify profiling gateway
-        shell: pwsh
-        run: python -m unittest discover -s script/windows-local-web -p test_gateway.py -v
-
-      - name: Build Web and Windows remote-server
-        shell: pwsh
-        run: |
-          rustup show
-          if ($LASTEXITCODE) { throw 'Could not install the workspace Rust toolchain.' }
-          $toolchain = (rustup show active-toolchain) -split '\s+' | Select-Object -First 1
-          if ($LASTEXITCODE -or -not $toolchain) { throw 'Could not resolve the workspace Rust toolchain.' }
-          $buildDirectory = Join-Path $env:RUNNER_TEMP zed-web-build
-          ./script/windows-local-web/build.ps1 -Component All -WasiSdk target/wasi-sdk `
-            -WasmToolchain $toolchain -OutputDirectory $buildDirectory
-      - name: Split and verify the editor startup bundle
-        shell: pwsh
-        run: |
-          $buildDirectory = Join-Path $env:RUNNER_TEMP zed-web-build
-          $profile = Join-Path $env:RUNNER_TEMP zed-web-startup.data
-          $optimized = Join-Path $env:RUNNER_TEMP zed-web-optimized
-          python script/windows-local-web/profile-web.py $buildDirectory --software --splitter $env:ZED_WASM_SPLIT --profile $profile
-          if ($LASTEXITCODE) { throw 'Could not record a startup profile for this build.' }
-          node script/windows-local-web/split-web.mjs $env:ZED_WASM_SPLIT $buildDirectory $optimized $profile
-          if ($LASTEXITCODE) { throw 'Could not split the WebAssembly bundle.' }
-          python script/windows-local-web/profile-web.py $optimized --software
-          if ($LASTEXITCODE) { throw 'The optimized editor did not start.' }
-          ./script/windows-local-web/package-release.ps1 -BuildDirectory $optimized -SourceCommit $env:GITHUB_SHA
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: zed-web-release-${{ github.sha }}
-          path: ${{ runner.temp }}/zed-web-optimized/release/
-          if-no-files-found: error
-          compression-level: 1
+      - name: Install profiling dependencies
+        run: python -m pip install -r script/windows-local-web/requirements.txt
+      - name: Check the WebGPU adapter, device, and canvas in Edge
+        run: python -B script/windows-local-web/probe-gpu.py
