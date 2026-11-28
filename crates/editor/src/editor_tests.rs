@@ -1203,6 +1203,87 @@ fn test_toggle_breadcrumb_does_not_change_settings(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+async fn test_file_breadcrumbs_make_room_for_the_filename(cx: &mut TestAppContext) {
+    init_test(cx, |_| {});
+    let fs = FakeFs::new(cx.executor());
+    fs.insert_tree(
+        path!("/project"),
+        json!({
+            "first_directory_with_a_long_name": {
+                "second_directory_with_a_long_name": {
+                    "header.h": ""
+                }
+            }
+        }),
+    )
+    .await;
+    let project = Project::test(fs, [Path::new(path!("/project"))], cx).await;
+    let (multi_workspace, cx) =
+        cx.add_window_view(|window, cx| MultiWorkspace::test_new(project.clone(), window, cx));
+    let workspace = multi_workspace.read_with(cx, |workspace, _| workspace.workspace().clone());
+    let worktree_id = project.read_with(cx, |project, cx| {
+        project
+            .worktrees(cx)
+            .next()
+            .expect("project worktree")
+            .read(cx)
+            .id()
+    });
+    workspace
+        .update_in(cx, |workspace, window, cx| {
+            let toolbar = workspace.active_pane().read(cx).toolbar().clone();
+            toolbar.update(cx, |toolbar, cx| {
+                let breadcrumbs = cx.new(|_| breadcrumbs::Breadcrumbs::new());
+                toolbar.add_item(breadcrumbs, window, cx);
+            });
+            let relative_path = rel_path(
+                "first_directory_with_a_long_name/second_directory_with_a_long_name/header.h",
+            );
+            workspace.open_path((worktree_id, relative_path), None, true, window, cx)
+        })
+        .await
+        .expect("open header file");
+
+    cx.simulate_resize(size(px(900.), px(400.)));
+    cx.run_until_parked();
+    let toolbar = cx.debug_bounds("editor-toolbar").expect("toolbar bounds");
+    let wide_directories = cx
+        .debug_bounds("breadcrumb-directories")
+        .expect("directory bounds");
+    let wide_filename = cx
+        .debug_bounds("breadcrumb-filename")
+        .expect("filename bounds");
+    assert!(toolbar.size.height < px(32.));
+
+    cx.simulate_resize(size(px(220.), px(400.)));
+    cx.run_until_parked();
+    let narrow_directories = cx
+        .debug_bounds("breadcrumb-directories")
+        .expect("directory bounds");
+    let narrow_filename = cx
+        .debug_bounds("breadcrumb-filename")
+        .expect("filename bounds");
+    assert!(narrow_directories.size.width < wide_directories.size.width);
+    assert_eq!(narrow_filename.size.width, wide_filename.size.width);
+    assert!(narrow_filename.right() <= px(220.));
+
+    cx.simulate_event(gpui::MouseUpEvent {
+        button: gpui::MouseButton::Right,
+        position: narrow_filename.center(),
+        modifiers: Modifiers::none(),
+        click_count: 1,
+    });
+    assert_eq!(
+        cx.read_from_clipboard()
+            .and_then(|entry| entry.text())
+            .as_deref(),
+        Some(path!(
+            "/project/first_directory_with_a_long_name/second_directory_with_a_long_name/header.h"
+        )),
+    );
+}
+
+#[gpui::test]
 async fn test_navigation_history(cx: &mut TestAppContext) {
     init_test(cx, |_| {});
 

@@ -378,6 +378,10 @@ impl Item for SoloDiffView {
     }
 
     fn tab_content_text(&self, _detail: usize, cx: &App) -> SharedString {
+        format!("{} (Diff)", self.suggested_filename(cx)).into()
+    }
+
+    fn suggested_filename(&self, cx: &App) -> SharedString {
         self.buffer
             .read(cx)
             .file()

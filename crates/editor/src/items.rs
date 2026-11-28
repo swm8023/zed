@@ -1058,7 +1058,11 @@ impl Item for Editor {
 
     fn breadcrumb_location(&self, cx: &App) -> ToolbarItemLocation {
         if self.breadcrumbs_visible() && self.buffer().read(cx).is_singleton() {
-            ToolbarItemLocation::PrimaryLeft
+            if self.breadcrumb_file(cx).is_some() {
+                ToolbarItemLocation::PrimaryLeftCompact
+            } else {
+                ToolbarItemLocation::PrimaryLeft
+            }
         } else {
             ToolbarItemLocation::Hidden
         }

@@ -11467,6 +11467,13 @@ impl Editor {
         }
     }
 
+    fn breadcrumb_file<'a>(&self, cx: &'a App) -> Option<&'a Arc<dyn language::File>> {
+        if self.breadcrumb_header.is_some() {
+            return None;
+        }
+        self.buffer().read(cx).as_singleton()?.read(cx).file()
+    }
+
     fn breadcrumbs_inner(&self, cx: &App) -> Option<Vec<HighlightedText>> {
         let multi_buffer = self.buffer().read(cx);
         // In a multi-buffer layout, we don't want to include the filename in the breadcrumbs

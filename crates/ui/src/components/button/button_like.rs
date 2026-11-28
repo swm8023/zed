@@ -517,7 +517,7 @@ pub struct ButtonLike {
 impl ButtonLike {
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
-            base: div(),
+            base: div().flex_none(),
             id: id.into(),
             style: ButtonStyle::default(),
             disabled: false,
@@ -547,6 +547,11 @@ impl ButtonLike {
             tab_index: None,
             focus_handle: None,
         }
+    }
+
+    pub fn flex_shrink(mut self) -> Self {
+        self.base = self.base.min_w_0().flex_shrink_1();
+        self
     }
 
     pub fn new_rounded_left(id: impl Into<ElementId>) -> Self {
@@ -801,7 +806,6 @@ impl RenderOnce for ButtonLike {
             })
             .font_ui(cx)
             .group("")
-            .flex_none()
             .h(self.height.unwrap_or(self.size.rems().into()))
             .when_some(self.width, |this, width| {
                 this.w(width).justify_center().text_center()

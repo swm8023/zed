@@ -35,6 +35,7 @@ pub struct Tab {
     selected: bool,
     position: TabPosition,
     close_side: TabCloseSide,
+    reserve_start_slot: bool,
     start_slot: Option<AnyElement>,
     end_slot: Option<AnyElement>,
     children: SmallVec<[AnyElement; 2]>,
@@ -50,6 +51,7 @@ impl Tab {
             selected: false,
             position: TabPosition::First,
             close_side: TabCloseSide::End,
+            reserve_start_slot: true,
             start_slot: None,
             end_slot: None,
             children: SmallVec::new(),
@@ -68,6 +70,11 @@ impl Tab {
 
     pub fn start_slot<E: IntoElement>(mut self, element: impl Into<Option<E>>) -> Self {
         self.start_slot = element.into().map(IntoElement::into_any_element);
+        self
+    }
+
+    pub fn collapse_empty_start_slot(mut self) -> Self {
+        self.reserve_start_slot = false;
         self
     }
 
@@ -125,15 +132,19 @@ impl RenderOnce for Tab {
         };
 
         let (start_slot, end_slot) = {
-            let start_slot = h_flex()
-                .size(START_TAB_SLOT_SIZE)
-                .justify_center()
-                .children(self.start_slot);
+            let start_slot = (self.reserve_start_slot || self.start_slot.is_some()).then(|| {
+                h_flex()
+                    .size(START_TAB_SLOT_SIZE)
+                    .justify_center()
+                    .children(self.start_slot)
+            });
 
-            let end_slot = h_flex()
-                .size(END_TAB_SLOT_SIZE)
-                .justify_center()
-                .children(self.end_slot);
+            let end_slot = Some(
+                h_flex()
+                    .size(END_TAB_SLOT_SIZE)
+                    .justify_center()
+                    .children(self.end_slot),
+            );
 
             match self.close_side {
                 TabCloseSide::End => (start_slot, end_slot),
@@ -173,9 +184,9 @@ impl RenderOnce for Tab {
                     .px(DynamicSpacing::Base04.px(cx))
                     .gap(DynamicSpacing::Base04.rems(cx))
                     .text_color(text_color)
-                    .child(start_slot)
+                    .children(start_slot)
                     .children(self.children)
-                    .child(end_slot),
+                    .children(end_slot),
             )
     }
 }

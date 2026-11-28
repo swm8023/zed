@@ -12094,6 +12094,10 @@ mod tests {
                 .active_item_as::<SoloDiffView>(cx)
                 .expect("SoloDiffView should be active");
             assert_eq!(solo_diff.project_path(cx), Some(project_path.clone()));
+            assert_eq!(
+                solo_diff.read(cx).tab_content_text(0, cx),
+                "partial.rs (Diff)"
+            );
             let searchable = solo_diff
                 .read(cx)
                 .as_searchable(&solo_diff, cx)

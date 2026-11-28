@@ -633,7 +633,7 @@ pub struct Rerun {
 pub mod outline {
     use std::sync::OnceLock;
 
-    use gpui::{AnyView, App, Window, actions};
+    use gpui::{AnyView, App, Bounds, Pixels, Window, actions};
 
     actions!(
         outline,
@@ -642,8 +642,10 @@ pub mod outline {
             ToggleOutline
         ]
     );
-    /// A pointer to outline::toggle function, exposed here to sewer the breadcrumbs <-> outline dependency.
-    pub static TOGGLE_OUTLINE: OnceLock<fn(AnyView, &mut Window, &mut App)> = OnceLock::new();
+    /// Opens the outline from breadcrumbs without an editor-to-outline dependency.
+    pub static TOGGLE_OUTLINE: OnceLock<
+        fn(AnyView, Option<Bounds<Pixels>>, &mut Window, &mut App),
+    > = OnceLock::new();
 }
 
 actions!(

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Zed · WheelMaker family app icon</title>
+  <defs>
+    <linearGradient id="tile" x1="60" y1="0" x2="464" y2="512" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#122A52"/>
+      <stop offset=".55" stop-color="#0A1E44"/>
+      <stop offset="1" stop-color="#071630"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#80B5F8" stop-opacity=".24"/>
+      <stop offset=".65" stop-color="#80B5F8" stop-opacity=".05"/>
+      <stop offset="1" stop-color="#80B5F8" stop-opacity=".14"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="114" y1="223" x2="340" y2="136" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#25E7F6"/>
+      <stop offset=".42" stop-color="#18BFF4"/>
+      <stop offset="1" stop-color="#2387F4"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="173" y1="383" x2="406" y2="294" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF8218"/>
+      <stop offset=".58" stop-color="#FFAD0E"/>
+      <stop offset="1" stop-color="#FFCF36"/>
+    </linearGradient>
+    <linearGradient id="blade" x1="378" y1="136" x2="132" y2="376" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F5FAFF"/>
+      <stop offset=".56" stop-color="#CFE7F8"/>
+      <stop offset="1" stop-color="#F1F9FF"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="72" fill="url(#tile)"/>
+  <rect x="1" y="1" width="510" height="510" rx="71" fill="none" stroke="url(#rim)" stroke-width="2"/>
+  <path d="M121 128H358L310 176H121Q104 176 104 159V145Q104 128 121 128Z" fill="url(#blue)"/>
+  <path d="M391 384H154L202 336H391Q408 336 408 353V367Q408 384 391 384Z" fill="url(#amber)"/>
+  <path d="M356 128H400Q409 128 403 134L159 382Q157 384 154 384H112Q103 384 109 378Z" fill="url(#blade)"/>
+</svg>

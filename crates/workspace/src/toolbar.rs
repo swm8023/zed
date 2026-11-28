@@ -57,6 +57,7 @@ trait ToolbarItemViewHandle: Send {
 pub enum ToolbarItemLocation {
     Hidden,
     PrimaryLeft,
+    PrimaryLeftCompact,
     PrimaryRight,
     Secondary,
 }
@@ -77,7 +78,10 @@ impl Toolbar {
 
     fn left_items(&self) -> impl Iterator<Item = &dyn ToolbarItemViewHandle> {
         self.items.iter().filter_map(|(item, location)| {
-            if *location == ToolbarItemLocation::PrimaryLeft {
+            if matches!(
+                location,
+                ToolbarItemLocation::PrimaryLeft | ToolbarItemLocation::PrimaryLeftCompact
+            ) {
                 Some(item.as_ref())
             } else {
                 None
@@ -116,11 +120,22 @@ impl Render for Toolbar {
 
         let has_left_items = self.left_items().count() > 0;
         let has_right_items = self.right_items().count() > 0;
+        let compact = self
+            .items
+            .iter()
+            .any(|(_, location)| *location == ToolbarItemLocation::PrimaryLeftCompact);
+        let row_height = if compact { rems(1.5) } else { rems(2.) };
+        let vertical_padding = if compact {
+            rems(0.125)
+        } else {
+            DynamicSpacing::Base06.rems(cx)
+        };
 
         v_flex()
             .group("toolbar")
+            .debug_selector(|| "editor-toolbar".into())
             .relative()
-            .py(DynamicSpacing::Base06.rems(cx))
+            .py(vertical_padding)
             .px(DynamicSpacing::Base08.rems(cx))
             .when(has_left_items || has_right_items, |this| {
                 this.gap(DynamicSpacing::Base06.rems(cx))
@@ -131,13 +146,13 @@ impl Render for Toolbar {
             .when(has_left_items || has_right_items, |this| {
                 this.child(
                     h_flex()
-                        .items_start()
+                        .when(!compact, |this| this.items_start())
                         .justify_between()
                         .gap(DynamicSpacing::Base08.rems(cx))
                         .when(has_left_items, |this| {
                             this.child(
                                 h_flex()
-                                    .min_h_8()
+                                    .min_h(row_height)
                                     .flex_auto()
                                     .justify_start()
                                     .overflow_x_hidden()
@@ -147,7 +162,7 @@ impl Render for Toolbar {
                         .when(has_right_items, |this| {
                             this.child(
                                 h_flex()
-                                    .h_8()
+                                    .h(row_height)
                                     .flex_row_reverse()
                                     .when(has_left_items, |this| this.flex_none())
                                     .justify_end()

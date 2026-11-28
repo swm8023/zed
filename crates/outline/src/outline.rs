@@ -6,8 +6,9 @@ use editor::{Anchor, AnchorRangeExt, Editor, scroll::Autoscroll};
 use editor::{MultiBufferOffset, RowHighlightOptions, SelectionEffects};
 use fuzzy_nucleo::StringMatch;
 use gpui::{
-    App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, HighlightStyle,
-    ParentElement, Point, Rems, Render, Styled, StyledText, Task, WeakEntity, Window, div, rems,
+    App, Bounds, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable,
+    HighlightStyle, ParentElement, Pixels, Point, Rems, Render, Styled, StyledText, Task,
+    WeakEntity, Window, div, rems,
 };
 use language::{OffsetRangeExt, Outline, OutlineItem, OutlineSearchEntry};
 use picker::{MatchLocation, Picker, PickerDelegate, PreviewUpdate};
@@ -18,12 +19,12 @@ use workspace::{DismissDecision, ModalView};
 pub fn init(cx: &mut App) {
     cx.observe_new(OutlineView::register).detach();
     zed_actions::outline::TOGGLE_OUTLINE
-        .set(|view, window, cx| {
+        .set(|view, anchor, window, cx| {
             let Ok(editor) = view.downcast::<Editor>() else {
                 return;
             };
 
-            toggle(editor, &Default::default(), window, cx);
+            toggle_with_anchor(editor, anchor, window, cx);
         })
         .ok();
 }
@@ -34,13 +35,22 @@ pub fn toggle(
     window: &mut Window,
     cx: &mut App,
 ) {
+    toggle_with_anchor(editor, None, window, cx);
+}
+
+fn toggle_with_anchor(
+    editor: Entity<Editor>,
+    anchor: Option<Bounds<Pixels>>,
+    window: &mut Window,
+    cx: &mut App,
+) {
     let Some(workspace) = editor.read(cx).workspace() else {
         return;
     };
     if workspace.read(cx).active_modal::<OutlineView>(cx).is_some() {
         workspace.update(cx, |workspace, cx| {
             workspace.toggle_modal(window, cx, |window, cx| {
-                OutlineView::new(Outline::new(Vec::new()), editor.clone(), window, cx)
+                OutlineView::new(Outline::new(Vec::new()), editor.clone(), anchor, window, cx)
             });
         });
         return;
@@ -60,7 +70,7 @@ pub fn toggle(
                 let outline = Outline::new(items);
                 workspace.update(cx, |workspace, cx| {
                     workspace.toggle_modal(window, cx, |window, cx| {
-                        OutlineView::new(outline, editor, window, cx)
+                        OutlineView::new(outline, editor, anchor, window, cx)
                     });
                 });
             })
@@ -114,6 +124,7 @@ fn outline_for_editor(
 
 pub struct OutlineView {
     picker: Entity<Picker<OutlineViewDelegate>>,
+    anchor: Option<Bounds<Pixels>>,
 }
 
 impl Focusable for OutlineView {
@@ -124,6 +135,10 @@ impl Focusable for OutlineView {
 
 impl EventEmitter<DismissEvent> for OutlineView {}
 impl ModalView for OutlineView {
+    fn anchor_bounds(&self) -> Option<Bounds<Pixels>> {
+        self.anchor
+    }
+
     fn on_before_dismiss(
         &mut self,
         window: &mut Window,
@@ -139,6 +154,7 @@ impl ModalView for OutlineView {
 impl Render for OutlineView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
+            .debug_selector(|| "outline-view".into())
             .on_action(cx.listener(
                 |_this: &mut OutlineView,
                  _: &zed_actions::outline::ToggleOutline,
@@ -169,26 +185,32 @@ impl OutlineView {
     fn new(
         outline: Outline<Anchor>,
         editor: Entity<Editor>,
+        anchor: Option<Bounds<Pixels>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> OutlineView {
         let project = editor.read(cx).project().cloned();
         let delegate = OutlineViewDelegate::new(cx.entity().downgrade(), outline, editor, cx);
         let picker = cx.new(|cx| {
-            let picker = if let Some(project) = project {
+            let viewport = window.viewport_size();
+            let height_fraction = if anchor.is_some() { 0.5 } else { 0.75 };
+            let picker = if anchor.is_some() {
+                Picker::uniform_list(delegate, window, cx).initial_width(Rems::from_pixels(
+                    (viewport.width - px(16.))
+                        .clamp(px(0.), rems(26.).to_pixels(window.rem_size())),
+                    window,
+                ))
+            } else if let Some(project) = project {
                 let preview = picker_preview::editor_preview(project, window, cx);
                 Picker::uniform_list_with_preview(delegate, preview, window, cx)
             } else {
                 Picker::uniform_list(delegate, window, cx)
             };
             picker
-                .max_height(Rems::from_pixels(
-                    window.viewport_size().height * 0.75,
-                    window,
-                ))
+                .max_height(Rems::from_pixels(viewport.height * height_fraction, window))
                 .show_scrollbar(true)
         });
-        OutlineView { picker }
+        OutlineView { picker, anchor }
     }
 }
 
@@ -561,6 +583,19 @@ mod tests {
                     ],
                 );
             };
+
+        let breadcrumb = Bounds::new(gpui::point(px(25.), px(36.)), gpui::size(px(120.), px(22.)));
+        cx.update(|window, cx| {
+            toggle_with_anchor(editor.clone(), Some(breadcrumb), window, cx);
+        });
+        cx.executor().advance_clock(Duration::from_millis(200));
+        cx.run_until_parked();
+        let popup = cx
+            .debug_bounds("outline-view")
+            .expect("breadcrumb outline bounds");
+        assert_eq!(popup.left(), breadcrumb.left());
+        assert_eq!(popup.top(), breadcrumb.bottom() + px(4.));
+        cx.dispatch_action(menu::Cancel);
 
         let outline_view = open_outline_view(&workspace, cx);
         ensure_outline_view_contents(&outline_view, cx);

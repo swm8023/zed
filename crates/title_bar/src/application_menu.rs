@@ -1,4 +1,6 @@
-use gpui::{Action, Entity, OwnedMenu, OwnedMenuItem, Subscription, actions};
+use std::sync::{Arc, LazyLock};
+
+use gpui::{Action, Entity, Image, ImageFormat, OwnedMenu, OwnedMenuItem, Subscription, actions};
 use settings::{Settings, SettingsStore};
 use workspace::AccessibleMode;
 
@@ -6,7 +8,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use smallvec::SmallVec;
-use ui::{ContextMenu, PopoverMenu, PopoverMenuHandle, Tooltip, prelude::*};
+use ui::{ButtonLike, ContextMenu, PopoverMenu, PopoverMenuHandle, Tooltip, prelude::*};
 
 use crate::title_bar_settings::TitleBarSettings;
 
@@ -158,6 +160,13 @@ impl ApplicationMenu {
     }
 
     fn render_application_menu(&self, entry: &MenuEntry) -> impl IntoElement {
+        static APP_ICON: LazyLock<Arc<Image>> = LazyLock::new(|| {
+            Arc::new(Image::from_bytes(
+                ImageFormat::Svg,
+                include_bytes!("../resources/zed_app_icon.svg").to_vec(),
+            ))
+        });
+
         let handle = entry.handle.clone();
 
         let menu_name = entry.menu.name.clone();
@@ -173,14 +182,15 @@ impl ApplicationMenu {
                         Self::build_menu_from_items(entry.clone(), window, cx).into()
                     })
                     .trigger_with_tooltip(
-                        IconButton::new(
-                            SharedString::from(format!("{}-menu-trigger", menu_name)),
-                            ui::IconName::Menu,
-                        )
-                        .style(ButtonStyle::Subtle)
-                        .icon_size(IconSize::Small)
-                        .tab_index(0isize)
-                        .aria_label("Application menu"),
+                        ButtonLike::new(SharedString::from(format!("{}-menu-trigger", menu_name)))
+                            .style(ButtonStyle::Subtle)
+                            .tab_index(0isize)
+                            .aria_label("Application menu")
+                            .child(
+                                gpui::img(Arc::clone(&APP_ICON))
+                                    .size(rems_from_px(18_f32))
+                                    .flex_none(),
+                            ),
                         Tooltip::text("Open Application Menu"),
                     )
                     .with_handle(handle),

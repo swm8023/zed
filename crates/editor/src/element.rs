@@ -39,6 +39,7 @@ use crate::{
 };
 use buffer_diff::{DiffHunkStatus, DiffHunkStatusKind};
 use collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use file_icons::FileIcons;
 use git::{Oid, blame::BlameEntry, commit::ParsedCommitMessage};
 use gpui::{
     Action, Along, AnyElement, App, AppContext, AvailableSpace, Axis as ScrollbarAxis, BorderStyle,
@@ -90,7 +91,7 @@ use theme_settings::BufferLineHeight;
 use ui::utils::ensure_minimum_contrast;
 use ui::{ButtonLike, POPOVER_Y_PADDING, Tooltip, prelude::*, scrollbars::ShowScrollbar};
 use unicode_segmentation::UnicodeSegmentation;
-use util::{ResultExt, debug_panic};
+use util::{ResultExt, debug_panic, paths::PathStyle};
 use web_time::Instant;
 use workspace::{
     CollaboratorId, ItemHandle, Workspace,
@@ -6932,7 +6933,7 @@ impl Gutter<'_> {
 }
 
 pub fn render_breadcrumb_text(
-    mut segments: Vec<HighlightedText>,
+    segments: Vec<HighlightedText>,
     breadcrumb_font: Option<Font>,
     prefix: Option<gpui::AnyElement>,
     active_item: &dyn ItemHandle,
@@ -6940,80 +6941,60 @@ pub fn render_breadcrumb_text(
     window: &mut Window,
     cx: &App,
 ) -> gpui::AnyElement {
-    const MAX_SEGMENTS: usize = 12;
+    let editor = active_item.downcast::<Editor>();
+    let file = editor
+        .as_ref()
+        .filter(|_| !multibuffer_header)
+        .and_then(|editor| editor.read(cx).breadcrumb_file(cx));
+    let file_breadcrumbs = file.zip(segments.split_first());
+    let file_path = file_breadcrumbs.map(|(_, (path, _))| path.text.clone());
+    let show_dirty_filename =
+        !workspace::TabBarSettings::get_global(cx).show && active_item.is_dirty(cx);
 
-    let element = h_flex().flex_grow_1().text_ui(cx);
-
-    let prefix_end_ix = cmp::min(segments.len(), MAX_SEGMENTS / 2);
-    let suffix_start_ix = cmp::max(
-        prefix_end_ix,
-        segments.len().saturating_sub(MAX_SEGMENTS / 2),
-    );
-
-    if suffix_start_ix > prefix_end_ix {
-        segments.splice(
-            prefix_end_ix..suffix_start_ix,
-            Some(HighlightedText {
-                text: "⋯".into(),
-                highlights: vec![],
-            }),
-        );
-    }
-
-    let highlighted_segments = segments.into_iter().enumerate().map(|(index, segment)| {
-        let mut text_style = window.text_style();
-        if let Some(font) = &breadcrumb_font {
-            text_style.font_family = font.family.clone();
-            text_style.font_features = font.features.clone();
-            text_style.font_style = font.style;
-            text_style.font_weight = font.weight;
-        }
-        text_style.color = Color::Muted.color(cx);
-
-        if index == 0
-            && !workspace::TabBarSettings::get_global(cx).show
-            && active_item.is_dirty(cx)
-            && let Some(styled_element) = apply_dirty_filename_style(&segment, &text_style, cx)
-        {
-            return styled_element;
-        }
-
-        StyledText::new(segment.text.replace('\n', " "))
-            .with_default_highlights(&text_style, segment.highlights)
-            .into_any()
-    });
-
-    let breadcrumbs = Itertools::intersperse_with(highlighted_segments, || {
-        Label::new("›").color(Color::Placeholder).into_any_element()
-    });
-
-    let breadcrumbs_stack = h_flex()
-        .gap_1()
-        .when(multibuffer_header, |this| {
-            this.pl_2()
-                .border_l_1()
-                .border_color(cx.theme().colors().border.opacity(0.6))
-        })
-        .children(breadcrumbs);
-
-    let breadcrumbs = if let Some(prefix) = prefix {
-        h_flex().gap_1p5().child(prefix).child(breadcrumbs_stack)
+    let breadcrumbs = if let Some((file, (path, symbols))) = file_breadcrumbs {
+        render_file_breadcrumbs(
+            &path.text,
+            file.path_style(cx),
+            symbols,
+            show_dirty_filename,
+            cx,
+        )
     } else {
-        breadcrumbs_stack
+        render_breadcrumb_segments(
+            segments,
+            breadcrumb_font,
+            prefix,
+            show_dirty_filename,
+            multibuffer_header,
+            window,
+            cx,
+        )
     };
 
-    let editor = active_item
-        .downcast::<Editor>()
-        .map(|editor| editor.downgrade());
+    let compact = file_path.is_some();
+    let element = h_flex()
+        .flex_grow_1()
+        .when(compact, |this| this.min_w_0().max_w_full())
+        .text_ui(cx);
+    let editor = editor.map(|editor| editor.downgrade());
 
     let has_project_path = active_item.project_path(cx).is_some();
+    let outline_anchor = compact.then(|| Rc::new(Cell::new(None)));
 
     match editor {
         Some(editor) => element
+            .when_some(outline_anchor.clone(), |this, outline_anchor| {
+                this.on_children_prepainted(move |bounds, _, _| {
+                    outline_anchor.set(bounds.first().copied());
+                })
+            })
             .id("breadcrumb_container")
-            .when(!multibuffer_header, |this| this.overflow_x_scroll())
+            .when(!multibuffer_header && !compact, |this| {
+                this.overflow_x_scroll()
+            })
             .child(
                 ButtonLike::new("toggle outline view")
+                    .when(compact, |this| this.flex_shrink())
                     .child(breadcrumbs)
                     .when(multibuffer_header, |this| {
                         this.style(ButtonStyle::Transparent)
@@ -7024,6 +7005,9 @@ pub fn render_breadcrumb_text(
                         this.tooltip(Tooltip::element(move |_window, cx| {
                             v_flex()
                                 .gap_1()
+                                .when_some(file_path.clone(), |this, path| {
+                                    this.child(div().max_w_96().child(Label::new(path).truncate()))
+                                })
                                 .child(
                                     h_flex()
                                         .gap_1()
@@ -7055,7 +7039,12 @@ pub fn render_breadcrumb_text(
                                     .upgrade()
                                     .zip(zed_actions::outline::TOGGLE_OUTLINE.get())
                                 {
-                                    callback(editor.to_any_view(), window, cx);
+                                    callback(
+                                        editor.to_any_view(),
+                                        outline_anchor.as_ref().and_then(|anchor| anchor.get()),
+                                        window,
+                                        cx,
+                                    );
                                 }
                             }
                         })
@@ -7085,6 +7074,171 @@ pub fn render_breadcrumb_text(
             .pl_1()
             .child(breadcrumbs)
             .into_any_element(),
+    }
+}
+
+fn render_file_breadcrumbs(
+    path: &str,
+    path_style: PathStyle,
+    symbols: &[HighlightedText],
+    show_dirty_filename: bool,
+    cx: &App,
+) -> AnyElement {
+    use language::HighlightedTextBuilder;
+
+    const SEPARATOR: &str = "  ›  ";
+    let separator_style = gpui::HighlightStyle {
+        color: Some(Color::Placeholder.color(cx)),
+        ..Default::default()
+    };
+
+    let separator = path_style.primary_separator();
+    let (directory_path, filename) = path.rsplit_once(separator).unwrap_or(("", path));
+    let mut directories = HighlightedTextBuilder::default();
+    for directory in directory_path
+        .split(separator)
+        .filter(|part| !part.is_empty())
+    {
+        directories.push_plain(directory.replace('\n', " "));
+        directories.push_styled(SEPARATOR, separator_style);
+    }
+    let directories = directories.build();
+
+    let mut symbol_text = String::new();
+    let mut symbol_highlights = Vec::new();
+    for symbol in symbols {
+        let separator_start = symbol_text.len();
+        symbol_text.push_str(SEPARATOR);
+        let symbol_start = symbol_text.len();
+        symbol_highlights.push((separator_start..symbol_start, separator_style));
+        symbol_text.push_str(&symbol.text.replace('\n', " "));
+        symbol_highlights.extend(
+            symbol.highlights.iter().map(|(range, style)| {
+                (symbol_start + range.start..symbol_start + range.end, *style)
+            }),
+        );
+    }
+
+    let icon = FileIcons::get_icon(std::path::Path::new(filename), cx)
+        .map(|path| Icon::from_path(path).size(IconSize::Small));
+    let clipped_text = || div().min_w_0().overflow_x_hidden().whitespace_nowrap();
+    h_flex()
+        .min_w_0()
+        .max_w_full()
+        .text_ui_sm(cx)
+        .text_color(Color::Muted.color(cx))
+        .when(!directories.text.is_empty(), |this| {
+            this.child(
+                clipped_text()
+                    .debug_selector(|| "breadcrumb-directories".into())
+                    .text_ellipsis_middle()
+                    .child(
+                        StyledText::new(directories.text).with_highlights(directories.highlights),
+                    ),
+            )
+        })
+        .child(
+            h_flex()
+                .min_w_0()
+                .max_w_full()
+                .flex_shrink_0()
+                .child(
+                    h_flex()
+                        .debug_selector(|| "breadcrumb-filename".into())
+                        .min_w_0()
+                        .max_w_full()
+                        .flex_shrink_0()
+                        .gap_1()
+                        .children(icon)
+                        .child(
+                            Label::new(filename.replace('\n', " "))
+                                .size(LabelSize::Small)
+                                .single_line()
+                                .truncate_middle()
+                                .when(show_dirty_filename, |label| label.weight(FontWeight::BOLD)),
+                        ),
+                )
+                .when(!symbol_text.is_empty(), |this| {
+                    this.child(
+                        clipped_text()
+                            .text_ellipsis_start()
+                            .child(StyledText::new(symbol_text).with_highlights(symbol_highlights)),
+                    )
+                }),
+        )
+        .into_any_element()
+}
+
+fn render_breadcrumb_segments(
+    mut segments: Vec<HighlightedText>,
+    breadcrumb_font: Option<Font>,
+    prefix: Option<gpui::AnyElement>,
+    show_dirty_filename: bool,
+    multibuffer_header: bool,
+    window: &Window,
+    cx: &App,
+) -> AnyElement {
+    const MAX_SEGMENTS: usize = 12;
+
+    let prefix_end_ix = cmp::min(segments.len(), MAX_SEGMENTS / 2);
+    let suffix_start_ix = cmp::max(
+        prefix_end_ix,
+        segments.len().saturating_sub(MAX_SEGMENTS / 2),
+    );
+
+    if suffix_start_ix > prefix_end_ix {
+        segments.splice(
+            prefix_end_ix..suffix_start_ix,
+            Some(HighlightedText {
+                text: "⋯".into(),
+                highlights: vec![],
+            }),
+        );
+    }
+
+    let highlighted_segments = segments.into_iter().enumerate().map(|(index, segment)| {
+        let mut text_style = window.text_style();
+        if let Some(font) = &breadcrumb_font {
+            text_style.font_family = font.family.clone();
+            text_style.font_features = font.features.clone();
+            text_style.font_style = font.style;
+            text_style.font_weight = font.weight;
+        }
+        text_style.color = Color::Muted.color(cx);
+
+        if index == 0
+            && show_dirty_filename
+            && let Some(styled_element) = apply_dirty_filename_style(&segment, &text_style, cx)
+        {
+            return styled_element;
+        }
+
+        StyledText::new(segment.text.replace('\n', " "))
+            .with_default_highlights(&text_style, segment.highlights)
+            .into_any()
+    });
+
+    let breadcrumbs = Itertools::intersperse_with(highlighted_segments, || {
+        Label::new("›").color(Color::Placeholder).into_any_element()
+    });
+
+    let segments = h_flex()
+        .gap_1()
+        .when(multibuffer_header, |this| {
+            this.pl_2()
+                .border_l_1()
+                .border_color(cx.theme().colors().border.opacity(0.6))
+        })
+        .children(breadcrumbs);
+
+    if let Some(prefix) = prefix {
+        h_flex()
+            .gap_1p5()
+            .child(prefix)
+            .child(segments)
+            .into_any_element()
+    } else {
+        segments.into_any_element()
     }
 }
 

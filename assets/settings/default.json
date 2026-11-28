@@ -51,7 +51,9 @@
   //         "buffer_line_height": {
   //           "custom": 2
   //         },
-  "buffer_line_height": "comfortable",
+  "buffer_line_height": {
+    "custom": 1.35,
+  },
   // The name of a font to use for rendering text in the UI
   // You can set this to ".SystemUIFont" to use the system font
   // ".ZedSans" currently aliases to "IBM Plex Sans", but this may
@@ -706,7 +708,7 @@
     // Whether to show fold buttons in the gutter.
     "folds": true,
     // Minimum number of characters to reserve space for in the gutter.
-    "min_line_number_digits": 4,
+    "min_line_number_digits": 3,
     // The width of the git diff hunk indicators in the gutter.
     // Use "default" to scale with font size, or {"custom": <pixels>} for a fixed width.
     "git_gutter_width": "default",
@@ -2453,7 +2455,11 @@
   // Settings overrides to use when using Linux.
   "linux": {},
   // Settings overrides to use when using macOS.
-  "macos": {},
+  "macos": {
+    "buffer_line_height": {
+      "custom": 1.5,
+    },
+  },
   // Settings overrides to use when using Windows.
   "windows": {
     "languages": {

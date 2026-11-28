@@ -1,6 +1,6 @@
 use gpui::{
-    AnyView, App, DismissEvent, Entity, EventEmitter, FocusHandle, Global, ManagedView,
-    MouseButton, Subscription, WeakFocusHandle,
+    Anchor, AnyView, App, Bounds, DismissEvent, Entity, EventEmitter, FocusHandle, Global,
+    ManagedView, MouseButton, Pixels, Subscription, WeakFocusHandle, anchored, point,
 };
 use ui::prelude::*;
 
@@ -62,6 +62,10 @@ pub trait ModalView: ManagedView {
     fn render_bare(&self) -> bool {
         false
     }
+
+    fn anchor_bounds(&self) -> Option<Bounds<Pixels>> {
+        None
+    }
 }
 
 trait ModalViewHandle {
@@ -71,6 +75,7 @@ trait ModalViewHandle {
     fn subscribe_dismiss(&self, window: &mut Window, cx: &mut Context<ModalLayer>) -> Subscription;
     fn fade_out_background(&self, cx: &mut App) -> bool;
     fn render_bare(&self, cx: &mut App) -> bool;
+    fn anchor_bounds(&self, cx: &App) -> Option<Bounds<Pixels>>;
 }
 
 impl<V: ModalView> ModalViewHandle for Entity<V> {
@@ -98,6 +103,10 @@ impl<V: ModalView> ModalViewHandle for Entity<V> {
 
     fn render_bare(&self, cx: &mut App) -> bool {
         self.read(cx).render_bare()
+    }
+
+    fn anchor_bounds(&self, cx: &App) -> Option<Bounds<Pixels>> {
+        self.read(cx).anchor_bounds()
     }
 }
 
@@ -295,6 +304,30 @@ impl Render for ModalLayer {
             return active_modal.modal.view().into_any_element();
         }
 
+        let content = h_flex()
+            .occlude()
+            .child(active_modal.modal.view())
+            .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                cx.stop_propagation();
+            });
+        let modal = if let Some(bounds) = active_modal.modal.anchor_bounds(cx) {
+            anchored()
+                .anchor(Anchor::TopLeft)
+                .attach(bounds, Anchor::BottomLeft)
+                .offset(point(px(0.), px(4.)))
+                .snap_to_window_with_margin(px(8.))
+                .child(content.track_focus(&active_modal.focus_handle))
+                .into_any_element()
+        } else {
+            v_flex()
+                .h(px(0.0))
+                .top_20()
+                .items_center()
+                .track_focus(&active_modal.focus_handle)
+                .child(content)
+                .into_any_element()
+        };
+
         div()
             .absolute()
             .size_full()
@@ -311,21 +344,7 @@ impl Render for ModalLayer {
                     this.hide_modal(window, cx);
                 }),
             )
-            .child(
-                v_flex()
-                    .h(px(0.0))
-                    .top_20()
-                    .items_center()
-                    .track_focus(&active_modal.focus_handle)
-                    .child(
-                        h_flex()
-                            .occlude()
-                            .child(active_modal.modal.view())
-                            .on_mouse_down(MouseButton::Left, |_, _, cx| {
-                                cx.stop_propagation();
-                            }),
-                    ),
-            )
+            .child(modal)
             .into_any_element()
     }
 }

@@ -2941,6 +2941,7 @@ impl Pane {
         let capability = item.capability(cx);
         let can_toggle_read_only = item.read_only_toggle_buffer(cx).is_some();
         let tab = Tab::new(ix)
+            .collapse_empty_start_slot()
             .position(if is_first_item {
                 TabPosition::First
             } else if is_last_item {
@@ -3031,7 +3032,6 @@ impl Pane {
                 this.drag_split_direction = None;
                 this.handle_external_paths_drop(paths, window, cx)
             }))
-            .start_slot::<Indicator>(indicator)
             .map(|this| {
                 let end_slot_action: &'static dyn Action;
                 let end_slot_tooltip_text: &'static str;
@@ -3057,7 +3057,7 @@ impl Pane {
                         ShowCloseButton::Hover => {
                             IconButton::new("close tab", IconName::Close).visible_on_hover("")
                         }
-                        ShowCloseButton::Hidden => return this,
+                        ShowCloseButton::Hidden => return this.end_slot::<Indicator>(indicator),
                     }
                     .shape(IconButtonShape::Square)
                     .icon_color(Color::Muted)
@@ -3083,11 +3083,32 @@ impl Pane {
                         this.tooltip(Tooltip::text(end_slot_tooltip_text))
                     }
                 });
+                let end_slot = match indicator {
+                    Some(indicator)
+                        if !is_pinned && *show_close_button == ShowCloseButton::Hover =>
+                    {
+                        h_flex()
+                            .relative()
+                            .child(end_slot)
+                            .child(
+                                h_flex()
+                                    .absolute()
+                                    .inset_0()
+                                    .justify_center()
+                                    .group_hover("", |style| style.invisible())
+                                    .child(indicator),
+                            )
+                            .into_any_element()
+                    }
+                    Some(indicator) => end_slot.indicator(indicator).into_any_element(),
+                    None => end_slot.into_any_element(),
+                };
                 this.end_slot(end_slot)
             })
             .child(
                 h_flex()
                     .id(("pane-tab-content", ix))
+                    .debug_selector(|| format!("pane-tab-content-{ix}"))
                     .gap_1()
                     .children(if let Some(icon) = icon {
                         Some(icon)
@@ -5135,6 +5156,7 @@ impl Render for DraggedTab {
                 .read(cx)
                 .tab_icon_element(self.item.as_ref(), self.is_active, window, cx);
         Tab::new("")
+            .collapse_empty_start_slot()
             .toggle_state(self.is_active)
             .children(icon)
             .child(label)
@@ -5150,7 +5172,10 @@ mod tests {
     use super::*;
     use crate::{
         Member,
-        item::test::{TestItem, TestProjectItem},
+        item::{
+            ItemEvent,
+            test::{TestItem, TestProjectItem},
+        },
     };
     use gpui::{
         AppContext, Axis, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
@@ -7035,6 +7060,33 @@ mod tests {
     }
 
     #[gpui::test]
+    async fn test_tab_label_position_is_stable_when_dirty(cx: &mut TestAppContext) {
+        init_test(cx);
+        let fs = FakeFs::new(cx.executor());
+        let project = Project::test(fs, None, cx).await;
+        let (workspace, cx) =
+            cx.add_window_view(|window, cx| Workspace::test_new(project.clone(), window, cx));
+        let pane = workspace.read_with(cx, |workspace, _| workspace.active_pane().clone());
+        let item = add_labeled_item(&pane, "A", false, cx);
+        cx.run_until_parked();
+
+        let tab = cx.debug_bounds("TAB-0").expect("tab bounds");
+        let content = cx
+            .debug_bounds("pane-tab-content-0")
+            .expect("tab content bounds");
+        assert!(content.left() - tab.left() < px(12.));
+
+        item.update(cx, |item, cx| {
+            item.is_dirty = true;
+            cx.emit(ItemEvent::UpdateTab);
+        });
+        cx.run_until_parked();
+
+        assert_eq!(cx.debug_bounds("TAB-0"), Some(tab));
+        assert_eq!(cx.debug_bounds("pane-tab-content-0"), Some(content));
+    }
+
+    #[gpui::test]
     async fn test_drag_tab_to_middle_tab_with_mouse_events(cx: &mut TestAppContext) {
         init_test(cx);
         let fs = FakeFs::new(cx.executor());
@@ -8834,7 +8886,7 @@ mod tests {
             cx.add_window_view(|window, cx| Workspace::test_new(project, window, cx));
         let pane = workspace.read_with(cx, |workspace, _| workspace.active_pane().clone());
 
-        cx.simulate_resize(size(px(300.), px(300.)));
+        cx.simulate_resize(size(px(200.), px(300.)));
 
         add_labeled_item(&pane, "untitled", false, cx);
         add_labeled_item(&pane, "untitled", false, cx);
