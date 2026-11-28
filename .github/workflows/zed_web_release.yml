@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           persist-credentials: false
-          ref: afb905821709384bcfc7fd14aa36e350c463ff86
+          ref: 02a680c820aa9298aefedaa5cf5cf09e59a02165
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
@@ -91,7 +91,7 @@ jobs:
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: zed-web-compiled-afb905821709384bcfc7fd14aa36e350c463ff86
+          name: zed-web-compiled-02a680c820aa9298aefedaa5cf5cf09e59a02165
           path: |
             ${{ runner.temp }}/zed-web-build/web/
             ${{ runner.temp }}/zed-web-build/cargo/release-fast/remote-server.exe
