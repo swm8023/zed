@@ -1,4 +1,5 @@
 use std::{
+    cell::RefCell,
     path::PathBuf,
     sync::{
         Arc, Mutex,
@@ -27,6 +28,23 @@ use util::paths::{PathStyle, RemotePathBuf};
 use wasm_bindgen::{JsCast as _, closure::Closure};
 use web_sys::{BinaryType, MessageEvent, WebSocket};
 use workspace::notifications::DetachAndPromptErr as _;
+
+thread_local! {
+    static SWITCH_WINDOW: RefCell<Option<(gpui::WindowHandle<workspace::MultiWorkspace>, AsyncApp)>> =
+        const { RefCell::new(None) };
+}
+
+pub async fn prepare_switch() -> Result<bool> {
+    let (handle, mut cx) = SWITCH_WINDOW
+        .with_borrow(|window| window.clone())
+        .context("No active Zed workspace")?;
+    let decision = handle.update(&mut cx, |multi, window, cx| {
+        multi.workspace().clone().update(cx, |workspace, cx| {
+            workspace.prepare_to_close(workspace::CloseIntent::ReplaceWindow, window, cx)
+        })
+    })?;
+    decision.await
+}
 
 struct Connection {
     arch: RemoteArch,
@@ -467,7 +485,8 @@ pub fn open(
             git_ui::git_panel::GitPanel::load(workspace.downgrade(), window_context.clone())
                 .await?;
         let outline_panel =
-            outline_panel::OutlinePanel::load(workspace.downgrade(), window_context.clone()).await?;
+            outline_panel::OutlinePanel::load(workspace.downgrade(), window_context.clone())
+                .await?;
         workspace.update_in(&mut window_context, |workspace, window, cx| {
             workspace.add_panel(project_panel, window, cx);
             workspace.add_panel(outline_panel, window, cx);
@@ -506,6 +525,7 @@ pub fn open(
             });
         })?;
         install_browser_shortcuts(window, app_state, connected, cx)?;
+        SWITCH_WINDOW.with_borrow_mut(|active| *active = Some((window, cx.clone())));
         Ok(())
     })
 }

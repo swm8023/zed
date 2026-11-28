@@ -5,6 +5,10 @@ pub mod fs_watcher;
 pub use fs_watcher::requires_poll_watcher;
 #[cfg(not(target_family = "wasm"))]
 mod git_clone_progress;
+#[cfg(not(target_family = "wasm"))]
+mod scoped_fs;
+#[cfg(not(target_family = "wasm"))]
+pub use scoped_fs::ScopedFs;
 
 #[cfg(target_family = "wasm")]
 pub fn requires_poll_watcher(_: &Path) -> bool {
@@ -119,6 +123,10 @@ impl From<PathEvent> for PathBuf {
 
 #[async_trait::async_trait]
 pub trait Fs: Send + Sync {
+    fn allows_write(&self, _path: &Path) -> bool {
+        true
+    }
+
     async fn create_dir(&self, path: &Path) -> Result<()>;
     async fn create_symlink(&self, path: &Path, target: PathBuf) -> Result<()>;
     async fn create_file(&self, path: &Path, options: CreateOptions) -> Result<()>;

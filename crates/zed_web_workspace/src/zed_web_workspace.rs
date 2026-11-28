@@ -15,8 +15,9 @@ use language::{
     LanguageRegistry, LanguageServerName, LspAdapter, LspAdapterDelegate, LspInstaller,
 };
 use lsp::LanguageServerBinary;
+use project::project_settings::ProjectSettings;
 use remote::RemoteArch;
-use settings::SettingsStore;
+use settings::{Settings as _, SettingsStore};
 use theme::ActiveTheme as _;
 use wasm_bindgen::prelude::*;
 use workspace::{AppState, Workspace, WorkspaceStore};
@@ -28,15 +29,33 @@ pub async fn start_workspace(
     path: String,
     architecture: String,
     global_config: String,
+    session_path: Option<String>,
 ) -> Result<(), JsValue> {
     console_error_panic_hook::set_once();
     gpui_web::init_logging();
-    launch_workspace(PathBuf::from(path), architecture, &global_config)
+    launch_workspace(
+        PathBuf::from(path),
+        architecture,
+        &global_config,
+        session_path.as_deref(),
+    )
+    .await
+    .map_err(|error| JsValue::from_str(&format!("{error:#}")))
+}
+
+#[wasm_bindgen]
+pub async fn prepare_workspace_switch() -> Result<bool, JsValue> {
+    windows_loopback::prepare_switch()
         .await
         .map_err(|error| JsValue::from_str(&format!("{error:#}")))
 }
 
-async fn launch_workspace(path: PathBuf, architecture: String, global_config: &str) -> Result<()> {
+async fn launch_workspace(
+    path: PathBuf,
+    architecture: String,
+    global_config: &str,
+    session_path: Option<&str>,
+) -> Result<()> {
     let global_config =
         GlobalConfig::parse(global_config).context("Loading the global Zed configuration")?;
     let arch = match architecture.as_str() {
@@ -58,8 +77,22 @@ async fn launch_workspace(path: PathBuf, architecture: String, global_config: &s
         "ws"
     };
     let socket_origin = format!("{socket_scheme}://{host}");
-    let sql_client = wasm_rpc::RpcClient::connect(&format!("{socket_origin}/sql-rpc"))?;
-    sqlez::remote_sql::set_sql_endpoint(format!("{origin}/sql"));
+    let endpoint = session_path.unwrap_or("/");
+    if endpoint != "/" {
+        let id = endpoint
+            .strip_prefix("/_zed/workspace/")
+            .and_then(|path| path.strip_suffix('/'));
+        anyhow::ensure!(
+            id.is_some_and(|id| id.len() == 43
+                && id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"-_".contains(&byte))),
+            "Invalid WheelMaker workspace endpoint"
+        );
+    }
+    let managed = endpoint != "/";
+    let sql_client = wasm_rpc::RpcClient::connect(&format!("{socket_origin}{endpoint}sql-rpc"))?;
+    sqlez::remote_sql::set_sql_endpoint(format!("{origin}{endpoint}sql"));
     sqlez::remote_sql::set_async_sql_client(sql_client);
     db::prepare_web_database().await?;
     let app_db = db::AppDatabase::open_in_memory("zed-web").await;
@@ -75,6 +108,7 @@ async fn launch_workspace(path: PathBuf, architecture: String, global_config: &s
         gpui_web::CanvasFontFallback::EmojiAndCjk,
     ));
     let http_client = Arc::new(platform.fetch_http_client());
+    let proxy_endpoint = format!("{socket_origin}{endpoint}zed-proxy");
     let (startup, ready) = oneshot::channel();
     Application::with_platform(platform)
         .with_assets(global_config.assets.clone())
@@ -82,9 +116,8 @@ async fn launch_workspace(path: PathBuf, architecture: String, global_config: &s
             cx.set_http_client(http_client);
             cx.set_global(app_db);
             let session = cx.new(|cx| session::AppSession::new(session, cx));
-            let task = initialize(session, &global_config, cx).map(|state| {
-                windows_loopback::open(path, arch, format!("{socket_origin}/zed-proxy"), state, cx)
-            });
+            let task = initialize(session, &global_config, managed, cx)
+                .map(|state| windows_loopback::open(path, arch, proxy_endpoint, state, cx));
             cx.spawn(async move |_cx| {
                 let result = match task {
                     Ok(task) => task.await,
@@ -104,6 +137,7 @@ async fn launch_workspace(path: PathBuf, architecture: String, global_config: &s
 fn initialize(
     session: gpui::Entity<session::AppSession>,
     global_config: &GlobalConfig,
+    managed: bool,
     cx: &mut App,
 ) -> Result<Arc<AppState>> {
     const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -152,8 +186,15 @@ fn initialize(
     });
 
     AppState::set_global(state.clone(), cx);
-    let trusted_paths = workspace::WorkspaceDb::global(cx).fetch_trusted_worktrees()?;
-    project::trusted_worktrees::init(trusted_paths, cx);
+    if managed {
+        let mut project = ProjectSettings::get_global(cx).clone();
+        project.session.restore_unsaved_buffers = false;
+        project.session.trust_all_worktrees = true;
+        ProjectSettings::override_global(project, cx);
+    } else {
+        let trusted_paths = workspace::WorkspaceDb::global(cx).fetch_trusted_worktrees()?;
+        project::trusted_worktrees::init(trusted_paths, cx);
+    }
     theme_settings::init(
         theme::LoadThemes::All(Box::new(global_config.assets.clone())),
         cx,

@@ -766,7 +766,11 @@ impl LocalBufferStore {
                     } else {
                         settings.is_path_read_only(&project_path.path)
                     };
-                    if is_read_only {
+                    if is_read_only
+                        || file.worktree.read(cx).as_local().is_some_and(|worktree| {
+                            !worktree.fs().allows_write(&worktree.absolutize(&file.path))
+                        })
+                    {
                         buffer.update(cx, |buffer, cx| {
                             buffer.set_capability(Capability::Read, cx);
                         });
@@ -1256,7 +1260,25 @@ impl BufferStore {
                     OpenBuffer::Operations(operations) => operations.extend_from_slice(&ops),
                     OpenBuffer::Complete { buffer, .. } => {
                         if let Some(buffer) = buffer.upgrade() {
-                            buffer.update(cx, |buffer, cx| buffer.apply_ops(ops, cx));
+                            buffer.update(cx, |buffer, cx| -> Result<()> {
+                                if let Some(file) = File::from_dyn(buffer.file())
+                                    && file.worktree.read(cx).as_local().is_some_and(|worktree| {
+                                        !worktree
+                                            .fs()
+                                            .allows_write(&worktree.absolutize(&file.path))
+                                    })
+                                {
+                                    anyhow::ensure!(
+                                        ops.iter().all(|op| matches!(
+                                            op,
+                                            language::Operation::UpdateSelections { .. }
+                                        )),
+                                        "This workspace buffer is read-only"
+                                    );
+                                }
+                                buffer.apply_ops(ops, cx);
+                                Ok(())
+                            })?;
                         }
                     }
                 },

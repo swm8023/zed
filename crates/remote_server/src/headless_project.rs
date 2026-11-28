@@ -103,7 +103,11 @@ impl HeadlessProject {
         log_store::init(true, cx);
     }
 
-    pub fn new(
+    pub fn new(state: HeadlessAppState, init_worktree_trust: bool, cx: &mut Context<Self>) -> Self {
+        Self::new_with_scope(state, init_worktree_trust, false, cx)
+    }
+
+    pub(crate) fn new_with_scope(
         HeadlessAppState {
             session,
             fs,
@@ -114,6 +118,7 @@ impl HeadlessProject {
             startup_time,
         }: HeadlessAppState,
         init_worktree_trust: bool,
+        browser_workspace: bool,
         cx: &mut Context<Self>,
     ) -> Self {
         debug_adapter_extension::init(proxy.clone(), cx);
@@ -135,8 +140,21 @@ impl HeadlessProject {
             );
         }
 
-        let environment =
-            cx.new(|cx| ProjectEnvironment::new(None, worktree_store.downgrade(), None, true, cx));
+        let environment = cx.new(|cx| {
+            let inherited = browser_workspace.then(|| {
+                std::env::vars()
+                    .map(|(key, value)| {
+                        let key = if cfg!(windows) && key.eq_ignore_ascii_case("PATH") {
+                            "PATH".to_owned()
+                        } else {
+                            key
+                        };
+                        (key, value)
+                    })
+                    .collect()
+            });
+            ProjectEnvironment::new(inherited, worktree_store.downgrade(), None, true, cx)
+        });
         let manifest_tree = ManifestTree::new(worktree_store.clone(), cx);
         let toolchain_store = cx.new(|cx| {
             ToolchainStore::local(
@@ -217,9 +235,12 @@ impl HeadlessProject {
                 fs.clone(),
                 worktree_store.clone(),
                 task_store.clone(),
-                true,
+                !browser_workspace,
                 cx,
             );
+            if browser_workspace {
+                observer.restrict_project_settings();
+            }
             observer.shared(REMOTE_SERVER_PROJECT_ID, session.clone(), cx);
             observer
         });

@@ -74,6 +74,7 @@ try {
         & $WasmBindgen --target web --no-typescript --remove-name-section --remove-producers-section --out-dir $web $module
         if ($LASTEXITCODE) { throw "wasm-bindgen failed ($LASTEXITCODE)." }
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'index.html') -Destination (Join-Path $web 'index.html')
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'wheelmaker.html') -Destination (Join-Path $web 'wheelmaker.html')
         $builtinThemes = Join-Path $web 'builtin-themes'
         New-Item -ItemType Directory -Force -Path $builtinThemes | Out-Null
         foreach ($family in 'ayu', 'gruvbox', 'one') {

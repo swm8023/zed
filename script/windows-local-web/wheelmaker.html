@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zed Web</title>
+<style>
+:root { color-scheme: dark; font: 14px system-ui, sans-serif; background: #222; color: #ddd; }
+body { margin: 0; }
+iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; }
+iframe[data-pending] { opacity: 0; pointer-events: none; }
+#picker { position: fixed; z-index: 2; top: 3px; right: 8px; display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 5px; background: #252526; }
+#login { position: fixed; z-index: 3; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(320px, 80vw); padding: 20px; background: #252526; border: 1px solid #444; border-radius: 8px; }
+#login form { display: grid; gap: 12px; }
+input, select, button { font: inherit; }
+input, select { padding: 4px 6px; border: 1px solid #606060; border-radius: 4px; background: #303030; color: inherit; }
+button { padding: 4px 8px; border: 1px solid #7e91af; border-radius: 4px; background: #345477; color: #fff; }
+#status { position: fixed; z-index: 4; bottom: 8px; right: 8px; max-width: min(420px, 90vw); margin: 0; padding: 7px; background: #252526; border: 1px solid #444; border-radius: 5px; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="editor"></div>
+<div id="picker" hidden><label for="projects">WheelMaker</label><select id="projects" aria-label="WheelMaker project"></select></div>
+<main id="login" hidden>
+<form>
+<label for="password">WheelMaker Registry password</label>
+<input id="password" type="password" autocomplete="current-password" required autofocus>
+<button type="submit">Sign in</button>
+</form>
+</main>
+<p id="status" role="status" hidden></p>
+<script type="module">
+const editor = document.querySelector("#editor");
+const picker = document.querySelector("#picker");
+const projects = document.querySelector("#projects");
+const login = document.querySelector("#login");
+const status = document.querySelector("#status");
+let identity;
+let current;
+let busy = false;
+
+async function request(path, options = {}) {
+    const response = await fetch(path, { ...options, cache: "no-store" });
+    if (!response.ok) throw new Error((await response.text()).trim() || `Request failed (${response.status})`);
+    return response.status === 204 ? undefined : response.json();
+}
+
+function show(text) {
+    status.textContent = text;
+    status.hidden = !text;
+}
+
+async function listProjects() {
+    const directory = await request("/_zed/projects");
+    projects.replaceChildren(new Option("Open a project…", ""));
+    for (const project of directory.projects) {
+        const option = new Option(`${project.name} · ${project.hubId}${project.online ? "" : " (offline)"}`, project.projectId);
+        option.disabled = !project.online;
+        projects.add(option);
+    }
+    login.hidden = true;
+    picker.hidden = false;
+    show(directory.projects.length ? "" : "No registered projects.");
+}
+
+function waitForFrame(frame, types, timeout) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => finish(new Error("The editor did not respond.")), timeout);
+        window.addEventListener("message", receive);
+        function receive(event) {
+            if (event.origin !== location.origin || event.source !== frame.contentWindow || !types.includes(event.data?.type)) return;
+            finish(null, event.data);
+        }
+        function finish(error, data) {
+            clearTimeout(timer);
+            window.removeEventListener("message", receive);
+            if (error) reject(error);
+            else resolve(data);
+        }
+    });
+}
+
+function close(workspace) {
+    if (!workspace) return;
+    workspace.frame.remove();
+    fetch(workspace.sessionPath + "close", {
+        method: "DELETE",
+        headers: { "X-WheelMaker-CSRF": identity.csrfToken },
+        keepalive: true,
+    }).catch(() => {});
+}
+
+async function open(projectId) {
+    if (busy || !projectId || projectId === current?.projectId) return;
+    busy = true;
+    projects.disabled = true;
+    let candidate;
+    try {
+        show("Connecting to the project…");
+        const { sessionId, assets, sessionPath } = await request("/_zed/workspace/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-WheelMaker-CSRF": identity.csrfToken },
+            body: JSON.stringify({ projectId }),
+        });
+        const frame = document.createElement("iframe");
+        frame.title = "Zed editor";
+        frame.dataset.pending = "";
+        frame.src = `${assets}index.html?wmSession=${encodeURIComponent(sessionId)}`;
+        const ready = waitForFrame(frame, ["zed-ready", "zed-failed"], 180000);
+        editor.append(frame);
+        candidate = { frame, projectId, sessionPath };
+        const result = await ready;
+        if (result.type === "zed-failed") throw new Error(result.error);
+        if (current) {
+            show("");
+            const approved = waitForFrame(current.frame, ["zed-switch-response"], 120000);
+            current.frame.contentWindow.postMessage({ type: "zed-prepare-switch" }, location.origin);
+            const result = await approved;
+            if (!result.accepted) return;
+        }
+        close(current);
+        current = candidate;
+        candidate = null;
+        delete frame.dataset.pending;
+        frame.focus();
+        show("");
+    } catch (error) {
+        show(error.message);
+    } finally {
+        close(candidate);
+        projects.value = current?.projectId || "";
+        projects.disabled = false;
+        busy = false;
+    }
+}
+
+projects.addEventListener("change", () => open(projects.value));
+login.querySelector("form").addEventListener("submit", async event => {
+    event.preventDefault();
+    const password = login.querySelector("input");
+    const token = password.value;
+    password.value = "";
+    try {
+        identity = await request("/_zed/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token, deviceName: "Zed Web" }),
+        });
+        await listProjects();
+    } catch (error) {
+        show(error.message);
+        password.focus();
+    }
+});
+window.addEventListener("pagehide", event => {
+    if (!event.persisted) close(current);
+});
+
+try {
+    const { login: registryLogin } = await request("/_zed/site");
+    const fragment = location.hash.slice(1);
+    if (fragment) history.replaceState(null, "", location.pathname);
+    const code = new URLSearchParams(fragment).get("code");
+    if (code) {
+        try {
+            identity = await request("/_zed/auth/exchange", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ code }),
+            });
+        } catch {
+            login.hidden = false;
+        }
+    } else {
+        identity = await request("/_zed/auth/status");
+        if (!identity.authenticated && fragment !== "login") location.replace(registryLogin);
+    }
+    if (identity?.authenticated) await listProjects();
+    else login.hidden = false;
+} catch (error) {
+    show(error.message);
+}
+</script>
+</body>
+</html>

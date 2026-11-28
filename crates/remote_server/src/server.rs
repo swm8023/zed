@@ -35,8 +35,8 @@ use remote::{
     proxy::ProxyLaunchError,
 };
 use reqwest_client::ReqwestClient;
-use rpc::proto::{self, Envelope, REMOTE_SERVER_PROJECT_ID};
 use rpc::AnyProtoClient;
+use rpc::proto::{self, Envelope, REMOTE_SERVER_PROJECT_ID};
 use settings::{Settings, SettingsStore, watch_config_file};
 use smol::{
     channel::{Receiver, Sender},
@@ -84,6 +84,12 @@ pub enum Commands {
         #[arg(long)]
         identifier: String,
     },
+    Web {
+        #[arg(long)]
+        workspace_root: PathBuf,
+        #[arg(long)]
+        dependency_root: Vec<PathBuf>,
+    },
     Version {
         #[arg(long)]
         package: bool,
@@ -114,6 +120,10 @@ pub fn run(command: Commands) -> anyhow::Result<()> {
             identifier,
             reconnect,
         } => execute_proxy(identifier, reconnect).context("running proxy on the remote server"),
+        Commands::Web {
+            workspace_root,
+            dependency_root,
+        } => execute_web(workspace_root, dependency_root),
         #[cfg(unix)]
         Commands::Exec => execute_command(),
         Commands::Version { package } => {
@@ -600,13 +610,162 @@ pub fn execute_run(
         .with_context(|| format!("failed to write pid file: {pid_file:?}"))?;
 
     let listeners = ServerListeners::new(stdin_socket, stdout_socket, stderr_socket)?;
+    run_application(app, startup_time, None, move |cx, is_wsl_interop| {
+        start_server(listeners, log_rx, cx, is_wsl_interop)
+    })
+}
+
+fn execute_web(workspace_root: PathBuf, dependency_roots: Vec<PathBuf>) -> Result<()> {
+    init_paths()?;
+    env_logger::Builder::from_default_env().try_init()?;
+    let app = gpui_platform::headless();
+    let scope = Some((workspace_root, dependency_roots));
+    run_application(app, Instant::now(), scope, |cx, _| start_web_stdio(cx))
+}
+
+fn start_web_stdio(cx: &mut App) -> AnyProtoClient {
+    use proto::envelope::Payload;
+    let (incoming_tx, incoming_rx) = mpsc::unbounded();
+    let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded();
+    let mut rejected = outgoing_tx.clone();
+    cx.spawn(async move |cx| {
+        let reader = async {
+            let mut input = smol::Unblock::new(std::io::stdin());
+            let mut buffer = Vec::new();
+            loop {
+                let mut header = [0; 4];
+                input.read_exact(&mut header).await?;
+                let size = u32::from_le_bytes(header);
+                anyhow::ensure!(
+                    size > 0 && size <= 32 * 1024 * 1024,
+                    "Invalid web editor frame size"
+                );
+                let message =
+                    remote::protocol::read_message_with_len(&mut input, &mut buffer, size).await?;
+                if let Some(Payload::FormatBuffers(request)) = message.payload.as_ref()
+                    && request.trigger == proto::FormatTrigger::Save as i32
+                {
+                    // Saving edits works even when automatic formatters are disabled for Web.
+                    rejected
+                        .send(Envelope {
+                            responding_to: Some(message.id),
+                            payload: Some(Payload::FormatBuffersResponse(
+                                proto::FormatBuffersResponse {
+                                    transaction: Some(proto::ProjectTransaction::default()),
+                                },
+                            )),
+                            ..Default::default()
+                        })
+                        .await?;
+                    continue;
+                }
+                if matches!(
+                    message.payload.as_ref(),
+                    Some(
+                        Payload::Ping(_)
+                            | Payload::Ack(_)
+                            | Payload::Error(_)
+                            | Payload::RemoteStarted(_)
+                            | Payload::FlushBufferedMessages(_)
+                            | Payload::AllocateWorktreeIdResponse(_)
+                            | Payload::AddWorktree(_)
+                            | Payload::RemoveWorktree(_)
+                            | Payload::ListRemoteDirectory(_)
+                            | Payload::GetPathMetadata(_)
+                            | Payload::OpenBufferByPath(_)
+                            | Payload::OpenBufferById(_)
+                            | Payload::OpenNewBuffer(_)
+                            | Payload::OpenImageByPath(_)
+                            | Payload::CloseBuffer(_)
+                            | Payload::SaveBuffer(_)
+                            | Payload::UpdateBuffer(_)
+                            | Payload::SynchronizeBuffers(_)
+                            | Payload::ReloadBuffers(_)
+                            | Payload::CreateProjectEntry(_)
+                            | Payload::RenameProjectEntry(_)
+                            | Payload::ExpandProjectEntry(_)
+                            | Payload::ExpandAllForProjectEntry(_)
+                            | Payload::FindSearchCandidates(_)
+                            | Payload::FindSearchCandidatesCancelled(_)
+                            | Payload::RegisterBufferWithLanguageServers(_)
+                            | Payload::GetDefinition(_)
+                            | Payload::GetDeclaration(_)
+                            | Payload::GetTypeDefinition(_)
+                            | Payload::GetCompletions(_)
+                            | Payload::ResolveCompletionDocumentation(_)
+                            | Payload::GetHover(_)
+                            | Payload::InlayHints(_)
+                            | Payload::ResolveInlayHint(_)
+                            | Payload::LspQuery(_)
+                            | Payload::GetReferences(_)
+                            | Payload::GetDocumentHighlights(_)
+                    )
+                ) {
+                    incoming_tx
+                        .unbounded_send(message)
+                        .context("Workspace disconnected")?;
+                } else if message.responding_to.is_none() {
+                    rejected
+                        .send(Envelope {
+                            responding_to: Some(message.id),
+                            payload: Some(Payload::Error(proto::Error {
+                                message: "This command is unavailable in a browser workspace"
+                                    .into(),
+                                code: proto::ErrorCode::Forbidden as i32,
+                                tags: Vec::new(),
+                            })),
+                            ..Default::default()
+                        })
+                        .await?;
+                }
+            }
+            #[allow(unreachable_code)]
+            anyhow::Ok(())
+        };
+        let writer = async {
+            let mut output = smol::Unblock::new(std::io::stdout());
+            let mut buffer = Vec::new();
+            while let Some(message) = outgoing_rx.next().await {
+                write_message(&mut output, &mut buffer, message).await?;
+                output.flush().await?;
+            }
+            anyhow::Ok(())
+        };
+        let result = select! {
+            result = reader.fuse() => result,
+            result = writer.fuse() => result,
+        };
+        if let Err(error) = result {
+            log::debug!("Browser workspace stream ended: {error:#}");
+        }
+        cx.update(|cx| {
+            cx.shutdown();
+            cx.quit();
+        });
+    })
+    .detach();
+    RemoteClient::proto_client_from_channels(incoming_rx, outgoing_tx, cx, "web-server", false)
+}
+
+fn run_application(
+    app: gpui::Application,
+    startup_time: Instant,
+    scope: Option<(PathBuf, Vec<PathBuf>)>,
+    make_session: impl FnOnce(&mut App, bool) -> AnyProtoClient + 'static,
+) -> Result<()> {
+    let fs = RealFs::new(None, app.background_executor().clone());
+    let browser_workspace = scope.is_some();
+    let workspace_fs: Arc<dyn Fs> = if let Some((root, dependencies)) = scope {
+        fs::ScopedFs::new(fs.clone(), &root, &dependencies)?
+    } else {
+        fs.clone()
+    };
 
     rayon::ThreadPoolBuilder::new()
         .num_threads(std::thread::available_parallelism().map_or(1, |n| n.get().div_ceil(2)))
         .stack_size(10 * 1024 * 1024)
         .thread_name(|ix| format!("RayonWorker{}", ix))
-        .build_global()
-        .unwrap();
+        .build_global()?;
 
     #[cfg(unix)]
     let shell_env_loaded_rx = {
@@ -644,8 +803,10 @@ pub fn execute_run(
         };
 
         log::info!("gpui app started, initializing server");
-        let session = start_server(listeners, log_rx, cx, is_wsl_interop);
-        trusted_worktrees::init(HashMap::default(), cx);
+        let session = make_session(cx, is_wsl_interop);
+        if !browser_workspace {
+            trusted_worktrees::init(HashMap::default(), cx);
+        }
 
         GitHostingProviderRegistry::set_global(git_hosting_provider_registry, cx);
         git_hosting_providers::init(cx);
@@ -657,7 +818,6 @@ pub fn execute_run(
         json_schema_store::init(cx);
 
         let project = cx.new(|cx| {
-            let fs = RealFs::new(None, cx.background_executor().clone());
             let node_settings_rx = initialize_settings(session.clone(), fs.clone(), cx);
 
             let proxy_url = read_proxy_settings(cx);
@@ -685,21 +845,21 @@ pub fn execute_run(
             languages.set_language_server_download_dir(paths::languages_dir().clone());
             let languages = Arc::new(languages);
 
-            HeadlessProject::new(
+            HeadlessProject::new_with_scope(
                 HeadlessAppState {
                     session: session.clone(),
-                    fs,
+                    fs: workspace_fs,
                     http_client,
                     node_runtime,
                     languages,
                     extension_host_proxy,
                     startup_time,
                 },
-                true,
+                !browser_workspace,
+                browser_workspace,
                 cx,
             )
         });
-
 
         cx.background_spawn(async move {
             cleanup_old_binaries_wsl();

@@ -16,6 +16,7 @@ $remoteServer = Join-Path $build 'cargo/release-fast/remote-server.exe'
 foreach ($path in @(
     $remoteServer
     (Join-Path $web 'index.html')
+    (Join-Path $web 'wheelmaker.html')
     (Join-Path $web 'zed_web_workspace.js')
     (Join-Path $web 'zed_web_workspace_bg.wasm')
     (Join-Path $web 'zed_web_workspace_bg.wasm.br')
@@ -24,6 +25,11 @@ foreach ($path in @(
 )) {
     $file = Get-Item -LiteralPath $path
     if ($file.PSIsContainer -or $file.Length -eq 0) { throw "Expected a nonempty build output at $path." }
+}
+
+$remoteHelp = & $remoteServer web --help
+if ($LASTEXITCODE -or ($remoteHelp -join "`n") -notmatch '--workspace-root') {
+    throw 'The Windows remote-server is missing the managed Web workspace command.'
 }
 
 $release = (New-Item -ItemType Directory -Path (Join-Path $build 'release')).FullName

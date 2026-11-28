@@ -736,6 +736,7 @@ impl EventEmitter<SettingsObserverEvent> for SettingsObserver {}
 
 pub struct SettingsObserver {
     mode: SettingsObserverMode,
+    restrict_project_settings: bool,
     downstream_client: Option<AnyProtoClient>,
     worktree_store: Entity<WorktreeStore>,
     project_id: u64,
@@ -849,6 +850,7 @@ impl SettingsObserver {
         Self {
             worktree_store,
             task_store,
+            restrict_project_settings: false,
             mode: SettingsObserverMode::Local(fs.clone()),
             downstream_client: None,
             _trusted_worktrees_watcher,
@@ -912,6 +914,7 @@ impl SettingsObserver {
         Self {
             worktree_store,
             task_store,
+            restrict_project_settings: false,
             mode: SettingsObserverMode::Remote { via_collab },
             downstream_client: None,
             project_id: REMOTE_SERVER_PROJECT_ID,
@@ -1246,6 +1249,10 @@ impl SettingsObserver {
         .detach();
     }
 
+    pub fn restrict_project_settings(&mut self) {
+        self.restrict_project_settings = true;
+    }
+
     fn update_settings(
         &mut self,
         worktree: Entity<Worktree>,
@@ -1263,7 +1270,58 @@ impl SettingsObserver {
         } else {
             OnceCell::new()
         };
-        for (directory_path, kind, file_content) in settings_contents {
+        for (directory_path, kind, mut file_content) in settings_contents {
+            if self.restrict_project_settings {
+                match kind {
+                    LocalSettingsKind::Settings => {
+                        file_content = file_content.and_then(|contents| {
+                            let mut value: serde_json::Map<String, serde_json::Value> =
+                                settings::parse_json_with_comments(&contents).log_err()?;
+                            let go_hints = value
+                                .get("lsp")
+                                .and_then(|lsp| lsp.pointer("/gopls/settings/gopls/hints"))
+                                .and_then(serde_json::Value::as_object)
+                                .map(|hints| {
+                                    hints
+                                        .iter()
+                                        .filter(|(_, enabled)| enabled.is_boolean())
+                                        .map(|(name, enabled)| (name.clone(), enabled.clone()))
+                                        .collect::<serde_json::Map<_, _>>()
+                                });
+                            // Keep editor preferences. Runtime configuration belongs to the Hub.
+                            value.retain(|key, _| {
+                                matches!(
+                                    key.as_str(),
+                                    "theme"
+                                        | "icon_theme"
+                                        | "ui_font_family"
+                                        | "ui_font_size"
+                                        | "buffer_font_family"
+                                        | "buffer_font_size"
+                                        | "buffer_line_height"
+                                        | "tab_size"
+                                        | "hard_tabs"
+                                        | "soft_wrap"
+                                        | "show_whitespaces"
+                                        | "inlay_hints"
+                                        | "enable_language_server"
+                                        | "file_types"
+                                        | "file_scan_exclusions"
+                                )
+                            });
+                            if let Some(hints) = go_hints {
+                                value.insert(
+                                    "lsp".to_owned(),
+                                    serde_json::json!({"gopls": {"settings": {"gopls": {"hints": hints}}}}),
+                                );
+                            }
+                            serde_json::to_string(&value).log_err()
+                        });
+                    }
+                    LocalSettingsKind::Editorconfig => {}
+                    LocalSettingsKind::Tasks | LocalSettingsKind::Debug => continue,
+                }
+            }
             if kind != LocalSettingsKind::Editorconfig
                 && !*can_trust_worktree.get_or_init(|| {
                     if let Some(trusted_worktrees) = TrustedWorktrees::try_get_global(cx) {

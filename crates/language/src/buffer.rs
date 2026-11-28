@@ -1055,6 +1055,11 @@ impl Buffer {
     ) -> Result<Self> {
         let buffer_id = BufferId::new(message.id).context("Could not deserialize buffer_id")?;
         let buffer = TextBuffer::new(replica_id, buffer_id, message.base_text);
+        let capability = if message.read_only && capability.editable() {
+            Capability::Read
+        } else {
+            capability
+        };
         let mut this = Self::build(buffer, file, capability, cx);
         this.text.set_line_ending(proto::deserialize_line_ending(
             rpc::proto::LineEnding::try_from(message.line_ending)
@@ -1075,6 +1080,7 @@ impl Buffer {
             line_ending: proto::serialize_line_ending(self.line_ending()) as i32,
             saved_version: proto::serialize_version(&self.saved_version),
             saved_mtime: self.saved_mtime.map(|time| time.into()),
+            read_only: !self.capability.editable(),
         }
     }
 

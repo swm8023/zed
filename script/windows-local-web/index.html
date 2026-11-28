@@ -17,9 +17,16 @@ html, body { margin: 0; height: 100%; background: #282c33; color: #e1e4eb; }
 <script type="module">
 const status = document.querySelector("#startup");
 const binaryProfileType = "application/vnd.zed.web-profile";
+const workspaceId = new URL(location.href).searchParams.get("wmSession");
+const managed = /^[A-Za-z0-9_-]{43}$/.test(workspaceId || "") && parent !== window;
+const sessionPath = managed ? `/_zed/workspace/${workspaceId}/` : "/";
+
+function report(type, detail = {}) {
+    if (managed) parent.postMessage({ type, ...detail }, location.origin);
+}
 
 async function loadProfile() {
-    const response = await fetch("/global-config", { headers: { Accept: binaryProfileType } });
+    const response = await fetch(sessionPath + "global-config", { headers: { Accept: binaryProfileType } });
     if (!response.ok) throw new Error(await response.text());
     if (response.headers.get("Content-Type") !== binaryProfileType) return response.text();
 
@@ -52,25 +59,37 @@ async function loadProfile() {
 }
 
 try {
-    const response = await fetch("/bootstrap");
-    if (response.status === 401) {
+    const response = await fetch(sessionPath + "bootstrap");
+    if (response.status === 401 && !managed) {
         location.reload();
     } else {
         if (!response.ok) throw new Error("Could not load the workspace configuration.");
         const { workspace, architecture } = await response.json();
-        const [startWorkspace, profile] = await Promise.all([
-            import("/web/zed_web_workspace.js").then(async ({ default: init, start_workspace }) => {
+        const [editor, profile] = await Promise.all([
+            import(managed ? new URL("./zed_web_workspace.js", location.href).href : "/web/zed_web_workspace.js").then(async ({ default: init, ...editor }) => {
                 await init();
-                return start_workspace;
+                return editor;
             }),
             loadProfile(),
         ]);
-        await startWorkspace(workspace, architecture, profile);
+        await editor.start_workspace(workspace, architecture, profile, managed ? sessionPath : undefined);
         status.hidden = true;
+        if (managed) {
+            window.addEventListener("message", async event => {
+                if (event.source !== parent || event.origin !== location.origin || event.data?.type !== "zed-prepare-switch") return;
+                try {
+                    report("zed-switch-response", { accepted: await editor.prepare_workspace_switch() });
+                } catch (error) {
+                    report("zed-switch-response", { accepted: false, error: String(error) });
+                }
+            });
+        }
+        report("zed-ready");
     }
 } catch (error) {
     status.setAttribute("role", "alert");
     status.textContent = String(error);
+    report("zed-failed", { error: String(error) });
     console.error(error);
 }
 </script>

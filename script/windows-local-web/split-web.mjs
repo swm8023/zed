@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { attachDeferredSlots } from "./split-slot-loader.mjs";
@@ -250,7 +250,9 @@ writeFileSync(manifest, groups.map((group, part) => [`part${part}`, ...group].jo
 run(splitter, [wasmPath, "--multi-split", `--manifest=${manifest}`, `--out-prefix=${destinationWeb}/`,
     "--no-placeholders", "--import-namespace", "zed_primary", "--export-prefix", "zed_split_",
     "--placeholdermap", "--strip-debug", "-o", primaryPath]);
-const placeholders = readFileSync(primaryPath + ".placeholders", "utf8");
+const placeholderPath = primaryPath + ".placeholders";
+const placeholders = readFileSync(placeholderPath, "utf8");
+unlinkSync(placeholderPath);
 writeFileSync(join(destinationWeb, "deferred_slots.bin"), encodeSlots(input, groups, placeholders));
 writeFileSync(join(destinationWeb, glueName), addLoader(glue, readFileSync(primaryPath), placeholders));
 const optimizedPrimary = join(destination, "optimized.wasm");
@@ -259,6 +261,8 @@ run(optimizer, [primaryPath, "--duplicate-function-elimination", "--merge-simila
 renameSync(optimizedPrimary, primaryPath);
 copyFileSync(join(sourceWeb, "index.html"), join(destinationWeb, "index.html"));
 copyFileSync(join(sourceWeb, "profile.version"), join(destinationWeb, "profile.version"));
+const wheelmaker = join(sourceWeb, "wheelmaker.html");
+if (existsSync(wheelmaker)) copyFileSync(wheelmaker, join(destinationWeb, "wheelmaker.html"));
 for (const directory of ["snippets", "builtin-themes"]) {
     const path = join(sourceWeb, directory);
     if (existsSync(path)) cpSync(path, join(destinationWeb, directory), { recursive: true });

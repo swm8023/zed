@@ -104,11 +104,12 @@ async def relay_from_server(socket, stdout):
         await socket.send_bytes(header + payload)
 
 
-async def relay(socket, binary, workspace, state):
+async def relay(socket, binary, workspace, state, *, scoped=False):
     identifier = f"web-{secrets.token_hex(6)}"
     env = {**os.environ, "ZED_REMOTE_SERVER_DATA_DIR": str(state)}
+    command = ("web", "--workspace-root", str(workspace)) if scoped else ("proxy", "--identifier", identifier)
     process = await asyncio.create_subprocess_exec(
-        binary, "proxy", "--identifier", identifier, cwd=workspace, env=env,
+        binary, *command, cwd=workspace, env=env,
         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
@@ -151,7 +152,7 @@ def encoding_quality(headers, encoding):
 
 class WebAssets(StaticFiles):
     async def get_response(self, path, scope):
-        content_types = {".wasm": "application/wasm", ".js": "text/javascript"}
+        content_types = {".wasm": "application/wasm", ".js": "text/javascript", ".bin": "application/octet-stream"}
         asset_type = content_types.get(Path(path).suffix)
         if asset_type and encoding_quality(Headers(scope=scope), "br") > 0:
             try:
@@ -173,7 +174,7 @@ class WebAssets(StaticFiles):
 
 
 def app_for(host, web, workspace, binary, state, token, session, *,
-            public_origin=None, global_config=None, direct_tls=False):
+            public_origin=None, global_config=None, direct_tls=False, scoped=False):
     origin = public_origin or f"http://{host}"
     request_host = urlsplit(origin).netloc
     database = None
@@ -382,7 +383,7 @@ def app_for(host, web, workspace, binary, state, token, session, *,
             return
         await socket.accept()
         try:
-            await relay(socket, binary, workspace, state)
+            await relay(socket, binary, workspace, state, scoped=scoped)
         except WebSocketDisconnect:
             pass
         except (OSError, RuntimeError) as error:

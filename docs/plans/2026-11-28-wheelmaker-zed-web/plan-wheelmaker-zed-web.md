@@ -14,12 +14,20 @@
 
 ---
 
-- [ ] Add a shared release reader in `server/shared/zedrelease`. Verify the stable pointer, manifest, packages, and extraction paths. Test reuse and failed activation against an HTTP fixture.
-- [ ] Wire `registry.zed.publicUrl` through config and Gateway Caddy compilation. Keep the previous usable release after a failed refresh. Serve compressed assets at versioned paths.
-- [ ] Add Zed site exchange and project endpoints in `server/registry`. Reuse the Registry web session and project scope. Exercise authorized opens, one-time exchange, logout, and revocation.
-- [ ] Bind grants to session, project, Hub, and release identity. Relay matched workspace sessions through the existing authenticated Hub tunnel. Close relays after revocation, disconnect, and expiry.
-- [ ] Install the pinned program and start a separate process per editor session in `server/hub`. Verify process cleanup and reuse of the installed binary.
-- [ ] Apply the project filesystem boundary in `crates/remote_server`. Test reads and writes in the project and read-only definition jumps into dependencies.
-- [ ] Add the WheelMaker shell, editor session URLs, and safe switching to `script/windows-local-web` and `crates/zed_web_workspace`. Verify readiness, save confirmation, and failed switches.
-- [ ] Build the matched release from Zed. Measure the optimized cold transfer and check Go completion, hover, inlay hints and definition, CJK rendering, and TSX highlighting.
+- [x] Add a shared release reader in `server/shared/zedrelease`. Verify the stable pointer, manifest, packages, and extraction paths. Test reuse and failed activation against an HTTP fixture.
+- [x] Wire `registry.zed.publicUrl` through config and Gateway Caddy compilation. Keep the previous usable release after a failed refresh. Serve compressed assets at versioned paths.
+- [x] Add Zed site exchange and project endpoints in `server/registry`. Reuse the Registry web session and project scope. Exercise authorized opens, one-time exchange, logout, and revocation.
+- [x] Bind grants to session, project, Hub, and release identity. Relay matched workspace sessions through the existing authenticated Hub tunnel. Close relays after revocation, disconnect, and expiry.
+- [x] Install the pinned program and start a separate process per editor session in `server/hub`. Verify process cleanup and reuse of the installed binary.
+- [x] Apply the project filesystem boundary in `crates/remote_server`. Test reads and writes in the project and read-only definition jumps into dependencies.
+- [x] Add the WheelMaker shell, editor session URLs, and safe switching to `script/windows-local-web` and `crates/zed_web_workspace`. Verify readiness, save confirmation, and failed switches.
+- [x] Build the matched release from Zed. Measure the optimized cold transfer and check Go completion, hover, inlay hints and definition, CJK rendering, and TSX highlighting.
 - [ ] Run the HTTPS integration with two Windows Hubs. Check scope, simultaneous sessions, failure handling, and cleanup. Document the observed workflow in the WheelMaker Gateway and release pages.
+
+
+## Local verification
+
+- Windows release builds produced the browser bundle and the matching x64 `remote-server.exe`. The reference Edge software WebGPU fixture transferred 4,975,098 HTTP bytes from navigation to workspace readiness after splitting.
+- Edge exercised Go file writes, completion, hover, inlay hints, project definitions, and read-only standard library definitions. Browser screenshots confirmed Chinese glyphs and TSX highlighting.
+- An isolated WheelMaker Gateway and Registry routed two registered projects to separate Windows Hub instances on the same host. Edge signed in, saved to the first project, and switched to the second. A transport check closed one workspace while the other remained available.
+- Public DNS and TLS, remote-machine acceptance, and publishing an integrated Zed stable version still require the deployment environment.
