@@ -1,4 +1,4 @@
-Compile Zed Web for local graphics verification
+name: Compile Zed Web for local graphics verification
 
 on:
   workflow_dispatch:
@@ -80,6 +80,7 @@ jobs:
           $buildDirectory = Join-Path $env:RUNNER_TEMP zed-web-build
           ./script/windows-local-web/build.ps1 -Component All -WasiSdk target/wasi-sdk `
             -WasmToolchain $toolchain -OutputDirectory $buildDirectory
+
       - name: Record the compiled source commit
         shell: pwsh
         run: |
