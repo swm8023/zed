@@ -20,6 +20,7 @@ import brotli
 from starlette.applications import Starlette
 from starlette.datastructures import Headers
 from starlette.exceptions import HTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
@@ -403,7 +404,6 @@ def app_for(host, web, workspace, binary, state, token, session, *,
         Mount("/web", StaticFiles(directory=web)),
     ], lifespan=lifespan)
 
-    @app.middleware("http")
     async def check_host(request, call_next):
         if request.headers.get("host") != request_host:
             return PlainTextResponse("Use the workspace URL printed by the gateway.", status_code=400)
@@ -412,6 +412,7 @@ def app_for(host, web, workspace, binary, state, token, session, *,
             response.headers.setdefault(name, value)
         return response
 
+    app.add_middleware(BaseHTTPMiddleware, dispatch=check_host)
     return app
 
 

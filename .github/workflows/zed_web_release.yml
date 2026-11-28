@@ -65,6 +65,10 @@ jobs:
           $splitter = Join-Path $env:RUNNER_TEMP "binaryen-$version/bin/wasm-split.exe"
           "ZED_WASM_SPLIT=$splitter" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
 
+      - name: Verify profiling gateway
+        shell: pwsh
+        run: python -m unittest discover -s script/windows-local-web -p test_gateway.py -v
+
       - name: Build Web and Windows remote-server
         shell: pwsh
         run: |
