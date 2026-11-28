@@ -20,41 +20,121 @@ const binaryProfileType = "application/vnd.zed.web-profile";
 const workspaceId = new URL(location.href).searchParams.get("wmSession");
 const managed = /^[A-Za-z0-9_-]{43}$/.test(workspaceId || "") && parent !== window;
 const sessionPath = managed ? `/_zed/workspace/${workspaceId}/` : "/";
+const assetBase = managed ? new URL("./", location.href) : new URL("/web/", location.href);
+const builtinThemeFamilies = {
+    ayu: ["Ayu Dark", "Ayu Light", "Ayu Mirage"],
+    gruvbox: [
+        "Gruvbox Dark",
+        "Gruvbox Dark Hard",
+        "Gruvbox Dark Soft",
+        "Gruvbox Light",
+        "Gruvbox Light Hard",
+        "Gruvbox Light Soft",
+    ],
+};
 
 function report(type, detail = {}) {
     if (managed) parent.postMessage({ type, ...detail }, location.origin);
 }
 
+function encodeBase64(bytes) {
+    if (typeof bytes.toBase64 === "function") return bytes.toBase64();
+    let characters = "";
+    for (let start = 0; start < bytes.length; start += 16384) {
+        characters += String.fromCharCode(...bytes.subarray(start, start + 16384));
+    }
+    return btoa(characters);
+}
+
+function decodeBase64UTF8(value) {
+    const bytes = typeof Uint8Array.fromBase64 === "function"
+        ? Uint8Array.fromBase64(value)
+        : Uint8Array.from(atob(value), char => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+}
+
+function selectedThemeNames(settingsText) {
+    if (typeof settingsText !== "string" || !settingsText.trim()) return new Set();
+    let settings;
+    try {
+        settings = JSON.parse(settingsText);
+    } catch {
+        return new Set();
+    }
+    const theme = settings?.theme;
+    const selected = new Set();
+    if (typeof theme === "string" && theme) {
+        selected.add(theme);
+    } else if (theme && typeof theme === "object") {
+        for (const mode of ["light", "dark"]) {
+            if ((theme.mode === mode || (theme.mode !== "light" && theme.mode !== "dark")) &&
+                typeof theme[mode] === "string" && theme[mode]) {
+                selected.add(theme[mode]);
+            }
+        }
+    }
+    return selected;
+}
+
+async function addBuiltinThemes(profile) {
+    const selected = selectedThemeNames(profile?.settings);
+    if (!selected.size) return;
+    if (!profile.assets || typeof profile.assets !== "object") profile.assets = {};
+    for (const [path, payload] of Object.entries(profile.assets)) {
+        if ((!path.startsWith("themes/") && !path.startsWith("builtin-themes/")) || typeof payload !== "string") continue;
+        try {
+            const catalog = JSON.parse(decodeBase64UTF8(payload));
+            for (const variant of catalog?.themes ?? []) {
+                if (typeof variant?.name === "string") selected.delete(variant.name);
+            }
+        } catch {}
+    }
+    if (!selected.size) return;
+
+    const encoder = new TextEncoder();
+    const families = Object.entries(builtinThemeFamilies)
+        .filter(([, variants]) => variants.some(name => selected.has(name)))
+        .map(([family]) => family);
+    await Promise.all(families.map(async family => {
+        const assetPath = `builtin-themes/${family}/${family}.json`;
+        try {
+            const response = await fetch(new URL(assetPath, assetBase));
+            if (!response.ok) return;
+            const catalog = await response.json();
+            const variants = (catalog?.themes ?? []).filter(variant => selected.has(variant?.name));
+            if (variants.length) {
+                const filtered = JSON.stringify({ ...catalog, themes: variants });
+                profile.assets[assetPath] = encodeBase64(encoder.encode(filtered));
+            }
+        } catch {}
+    }));
+}
+
 async function loadProfile() {
     const response = await fetch(sessionPath + "global-config", { headers: { Accept: binaryProfileType } });
     if (!response.ok) throw new Error(await response.text());
-    if (response.headers.get("Content-Type") !== binaryProfileType) return response.text();
-
-    const content = new Uint8Array(await response.arrayBuffer());
-    const header = new DataView(content.buffer);
-    if (content.length < 9 || header.getUint32(0) !== 0x5a434647 || content[4] !== 1) {
-        throw new Error("Could not read the global Zed configuration header.");
-    }
-    let offset = 9 + header.getUint32(5, true);
-    if (offset > content.length) throw new Error("The global Zed configuration is incomplete.");
-    const profile = JSON.parse(new TextDecoder().decode(content.subarray(9, offset)));
-    for (const [path, length] of Object.entries(profile.assets)) {
-        if (!Number.isInteger(length) || length < 0 || length > content.length - offset) {
-            throw new Error("The global Zed configuration contains an invalid asset.");
+    let profile;
+    if (response.headers.get("Content-Type") !== binaryProfileType) {
+        profile = await response.json();
+    } else {
+        const content = new Uint8Array(await response.arrayBuffer());
+        const header = new DataView(content.buffer);
+        if (content.length < 9 || header.getUint32(0) !== 0x5a434647 || content[4] !== 1) {
+            throw new Error("Could not read the global Zed configuration header.");
         }
-        const asset = content.subarray(offset, offset + length);
-        if (typeof asset.toBase64 === "function") {
-            profile.assets[path] = asset.toBase64();
-        } else {
-            let characters = "";
-            for (let start = 0; start < asset.length; start += 16384) {
-                characters += String.fromCharCode(...asset.subarray(start, start + 16384));
+        let offset = 9 + header.getUint32(5, true);
+        if (offset > content.length) throw new Error("The global Zed configuration is incomplete.");
+        profile = JSON.parse(new TextDecoder().decode(content.subarray(9, offset)));
+        for (const [path, length] of Object.entries(profile.assets)) {
+            if (!Number.isInteger(length) || length < 0 || length > content.length - offset) {
+                throw new Error("The global Zed configuration contains an invalid asset.");
             }
-            profile.assets[path] = btoa(characters);
+            profile.assets[path] = encodeBase64(content.subarray(offset, offset + length));
+            offset += length;
         }
-        offset += length;
+        if (offset !== content.length) throw new Error("The global Zed configuration has extra data.");
     }
-    if (offset !== content.length) throw new Error("The global Zed configuration has extra data.");
+    await addBuiltinThemes(profile);
     return JSON.stringify(profile);
 }
 
@@ -66,7 +146,7 @@ try {
         if (!response.ok) throw new Error("Could not load the workspace configuration.");
         const { workspace, architecture } = await response.json();
         const [editor, profile] = await Promise.all([
-            import(managed ? new URL("./zed_web_workspace.js", location.href).href : "/web/zed_web_workspace.js").then(async ({ default: init, ...editor }) => {
+            import(new URL("zed_web_workspace.js", assetBase).href).then(async ({ default: init, ...editor }) => {
                 await init();
                 return editor;
             }),
