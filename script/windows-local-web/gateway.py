@@ -178,6 +178,8 @@ def app_for(host, web, workspace, binary, state, token, session, *,
             public_origin=None, global_config=None, direct_tls=False, scoped=False):
     origin = public_origin or f"http://{host}"
     request_host = urlsplit(origin).netloc
+    if global_config is not None:
+        global_config = global_config.resolve(strict=True)
     database = None
     profile = None
     previous_profiles = deque(maxlen=2)

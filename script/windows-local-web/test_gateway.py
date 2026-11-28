@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from gateway import SECURITY_HEADERS, app_for
+from gateway import SECURITY_HEADERS, SESSION_COOKIE, app_for
 
 
 class GatewayTest(unittest.IsolatedAsyncioTestCase):
@@ -14,12 +14,15 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
         web = root / "web"
         web.mkdir()
         (web / "index.html").write_text("<html></html>", encoding="utf-8")
+        config = web / ".." / "config"
+        config.mkdir()
+        (config / "settings.json").write_text('{"theme":"Example"}', encoding="utf-8")
         self.app = app_for(
             "workspace.test", web, root, root / "remote-server.exe", root / "state",
-            "test-token", "test-session",
+            "test-token", "test-session", global_config=config,
         )
 
-    async def request(self, host):
+    async def request(self, host, path="/", headers=()):
         messages = []
         request_sent = False
         response_completed = asyncio.Event()
@@ -43,10 +46,10 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
             "http_version": "1.1",
             "method": "GET",
             "scheme": "http",
-            "path": "/",
+            "path": path,
             "root_path": "",
             "query_string": b"",
-            "headers": [(b"host", host.encode("ascii"))],
+            "headers": [(b"host", host.encode("ascii")), *headers],
         }
         await asyncio.wait_for(self.app(scope, receive, send), timeout=5)
         return next(message for message in messages if message["type"] == "http.response.start")
@@ -62,3 +65,10 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
     async def test_unexpected_host_is_rejected(self):
         response = await self.request("other.test")
         self.assertEqual(response["status"], 400)
+
+    async def test_startup_reads_configuration_through_a_noncanonical_path(self):
+        cookie = (b"cookie", f"{SESSION_COOKIE}=test-session".encode("ascii"))
+        async with self.app.router.lifespan_context(self.app):
+            response = await self.request("workspace.test", "/global-config", (cookie,))
+        self.assertEqual(response["status"], 200)
+        self.assertEqual(dict(response["headers"])[b"content-type"], b"application/json")
