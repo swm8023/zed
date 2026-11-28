@@ -5,10 +5,7 @@ permissions:
   contents: read
 jobs:
   probe:
-    strategy:
-      matrix:
-        runner: [windows-2022, windows-2025]
-    runs-on: ${{ matrix.runner }}
+    runs-on: windows-2022
     timeout-minutes: 9
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
@@ -16,18 +13,21 @@ jobs:
           persist-credentials: false
       - name: Install profiling dependencies
         run: python -m pip install -r script/windows-local-web/requirements.txt
-      - name: Extract Edge 158.0.4370.45 for comparison
+      - name: Install verified Edge 158.0.4370.45
         run: |
           $installer = Join-Path $env:RUNNER_TEMP 'edge.msi'
-          $directory = Join-Path $env:RUNNER_TEMP 'edge-extracted'
           $url = 'https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/c2bf670e-30a9-46a9-b0e2-9ec403428385/MicrosoftEdgeEnterpriseX64.msi'
           Invoke-WebRequest -Uri $url -OutFile $installer
           if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ne '8BFCCAF626627E37B72E3E57108530B1479FAC5710F939E528866CC1095CA172') {
               throw 'Edge installer checksum mismatch.'
           }
-          $extract = Start-Process msiexec.exe -ArgumentList "/a `"$installer`" /qn TARGETDIR=`"$directory`"" -PassThru -Wait -WindowStyle Hidden
-          if ($extract.ExitCode -ne 0) { throw "MSI extraction failed: $($extract.ExitCode)" }
-          $browser = Get-ChildItem -LiteralPath $directory -Filter 'msedge.exe' -File -Recurse | Select-Object -First 1
-          if ($browser) { "ZED_PROBE_EDGE=$($browser.FullName)" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8 }
+          $install = Start-Process msiexec.exe -ArgumentList "/i `"$installer`" /qn /norestart" -PassThru -Wait -WindowStyle Hidden
+          if ($install.ExitCode -notin 0, 3010) { throw "Edge MSI installation failed: $($install.ExitCode)" }
+          $folder = [Environment]::GetFolderPath('ProgramFilesX86')
+          $browser = Get-Item -LiteralPath (Join-Path $folder 'Microsoft/Edge/Application/msedge.exe')
+          if ($browser.VersionInfo.ProductVersion -ne '158.0.4370.45') {
+              throw "Unexpected installed Edge version: $($browser.VersionInfo.ProductVersion)"
+          }
+          "ZED_PROBE_EDGE=$($browser.FullName)" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
       - name: Check the WebGPU adapter, device, and canvas
         run: python -B script/windows-local-web/probe-gpu.py

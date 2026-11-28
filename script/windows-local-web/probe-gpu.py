@@ -122,16 +122,12 @@ async def main():
                 async with asyncio.timeout(8):
                     while not server.started:
                         await asyncio.sleep(0.1)
-                edge = Path(os.environ["ProgramFiles(x86)"]) / "Microsoft/Edge/Application/msedge.exe"
-                chrome = Path(os.environ["ProgramFiles"]) / "Google/Chrome/Application/chrome.exe"
+                browser = Path(os.environ["ZED_PROBE_EDGE"])
                 software = ["--use-webgpu-adapter=swiftshader", "--enable-unsafe-swiftshader"]
                 variants = [
-                    ("edge-swiftshader", edge, software),
-                    ("edge-default", edge, []),
-                    ("chrome-vulkan", chrome, [*software, "--use-vulkan=swiftshader", "--disable-vulkan-surface"]),
+                    ("edge-pinned-swiftshader", browser, software),
+                    ("edge-pinned-default", browser, []),
                 ]
-                if browser := os.environ.get("ZED_PROBE_EDGE"):
-                    variants.append(("edge-pinned-swiftshader", Path(browser), software))
                 for label, browser, flags in variants:
                     location = scratch / label
                     location.mkdir()
