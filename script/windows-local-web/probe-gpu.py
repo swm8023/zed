@@ -76,12 +76,11 @@ async def request_device(page, origin):
         return {"browser": version["product"], **result["result"]["value"]}
 
 
-async def probe(origin, scratch, fingerprint, flags):
+async def probe(origin, scratch, fingerprint, browser, flags):
     flags = list(flags)
-    edge = Path(os.environ["ProgramFiles(x86)"]) / "Microsoft/Edge/Application/msedge.exe"
     profile = scratch / "edge"
     with subprocess.Popen([
-        edge, "--headless=new", "--enable-unsafe-webgpu", "--disable-extensions",
+        browser, "--headless=new", "--enable-unsafe-webgpu", "--disable-extensions",
         "--no-first-run", "--disable-sync", "--remote-debugging-port=0",
         f"--user-data-dir={profile}", f"--ignore-certificate-errors-spki-list={fingerprint}",
         *flags, "about:blank",
@@ -117,14 +116,18 @@ async def main():
                 async with asyncio.timeout(8):
                     while not server.started:
                         await asyncio.sleep(0.1)
-                for label, flags in [
-                    ("release-swiftshader", ["--use-webgpu-adapter=swiftshader","--enable-unsafe-swiftshader"]),
-                    ("default", []),
+                edge = Path(os.environ["ProgramFiles(x86)"]) / "Microsoft/Edge/Application/msedge.exe"
+                chrome = Path(os.environ["ProgramFiles"]) / "Google/Chrome/Application/chrome.exe"
+                software = ["--use-webgpu-adapter=swiftshader", "--enable-unsafe-swiftshader"]
+                for label, browser, flags in [
+                    ("chrome-swiftshader", chrome, software),
+                    ("chrome-default", chrome, []),
+                    ("edge-swiftshader-angle", edge, [*software, "--use-angle=swiftshader"]),
                 ]:
                     location = scratch / label
                     location.mkdir()
                     try:
-                        result = await probe(origin, location, fingerprint, flags)
+                        result = await probe(origin, location, fingerprint, browser, flags)
                     except (OSError, TimeoutError, RuntimeError, KeyError) as error:
                         result = {"error": f"{type(error).__name__}: {error}"}
                     print(json.dumps({"variant": label, **result}), flush=True)
